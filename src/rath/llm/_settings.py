@@ -8,17 +8,17 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-__all__ = ["LLMSettings", "default_dotenv_path", "load_llm_settings"]
+__all__ = ["RathLLMSettings", "rath_llm_default_dotenv_path", "load_rath_llm_settings"]
 
 
-def default_dotenv_path() -> Path:
+def rath_llm_default_dotenv_path() -> Path:
     """``OpenRath/OpenRath/.env`` next to ``pyproject.toml``."""
     # src/rath/llm/_settings.py -> parents[3] = project root containing pyproject.toml
     return Path(__file__).resolve().parents[3] / ".env"
 
 
 @dataclass(frozen=True, slots=True)
-class LLMSettings:
+class RathLLMSettings:
     """Values used to construct ``openai.OpenAI`` and default chat ``model``."""
 
     api_key: str
@@ -26,13 +26,13 @@ class LLMSettings:
     default_model: str | None = None
 
 
-def load_llm_settings(dotenv_path: Path | None = None) -> LLMSettings:
+def load_rath_llm_settings(dotenv_path: Path | None = None) -> RathLLMSettings:
     """Load ``OPENAI_*`` from ``.env`` (if present) then read environment.
 
     Existing environment variables are not overwritten by ``.env``
     (``load_dotenv(..., override=False)``).
     """
-    path = dotenv_path if dotenv_path is not None else default_dotenv_path()
+    path = dotenv_path if dotenv_path is not None else rath_llm_default_dotenv_path()
     if path.is_file():
         load_dotenv(path, override=False)
 
@@ -45,7 +45,7 @@ def load_llm_settings(dotenv_path: Path | None = None) -> LLMSettings:
             "OPENAI_API_KEY is empty: set it in .env or the environment",
         )
 
-    return LLMSettings(
+    return RathLLMSettings(
         api_key=api_key,
         base_url=base_raw or None,
         default_model=model_raw or None,

@@ -1,34 +1,45 @@
 """OpenAI-compatible LLM access (synchronous chat completions)."""
 
-from rath.llm._client import OpenAIChatClient
+from rath.llm._agent import RathOpenAIChatAgent
 from rath.llm._openai_create_kwargs import to_create_kwargs
 from rath.llm._openai_normalize import normalize_chat_completion
-from rath.llm._settings import LLMSettings, default_dotenv_path, load_llm_settings
-from rath.llm._types_request import LLMChatRequest, LLMFunctionTool, LLMMessage, LLMRole
+from rath.llm._settings import (
+    RathLLMSettings,
+    load_rath_llm_settings,
+    rath_llm_default_dotenv_path,
+)
+from rath.llm._types_request import (
+    RathLLMChatRequest,
+    RathLLMFunctionTool,
+    RathLLMMessage,
+    RathLLMRole,
+)
 from rath.llm._types_response import (
-    LLMAssistantMessage,
-    LLMChatChoice,
-    LLMChatResponse,
-    LLMTokenUsage,
-    LLMToolCallFunction,
-    LLMToolCallPart,
+    RathLLMAssistantMessage,
+    RathLLMChatChoice,
+    RathLLMChatResponse,
+    RathLLMFinishReason,
+    RathLLMTokenUsage,
+    RathLLMToolCallFunction,
+    RathLLMToolCallPart,
 )
 
 __all__ = [
-    "OpenAIChatClient",
-    "LLMSettings",
-    "default_dotenv_path",
-    "load_llm_settings",
+    "RathOpenAIChatAgent",
+    "RathLLMSettings",
+    "rath_llm_default_dotenv_path",
+    "load_rath_llm_settings",
     "to_create_kwargs",
     "normalize_chat_completion",
-    "LLMChatRequest",
-    "LLMMessage",
-    "LLMFunctionTool",
-    "LLMRole",
-    "LLMChatResponse",
-    "LLMChatChoice",
-    "LLMAssistantMessage",
-    "LLMTokenUsage",
-    "LLMToolCallPart",
-    "LLMToolCallFunction",
+    "RathLLMChatRequest",
+    "RathLLMMessage",
+    "RathLLMFunctionTool",
+    "RathLLMRole",
+    "RathLLMChatResponse",
+    "RathLLMChatChoice",
+    "RathLLMAssistantMessage",
+    "RathLLMFinishReason",
+    "RathLLMTokenUsage",
+    "RathLLMToolCallPart",
+    "RathLLMToolCallFunction",
 ]

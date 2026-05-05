@@ -8,6 +8,17 @@ stable API guarantees.
 
 ## Unreleased
 
+### Breaking — ``rath.llm`` naming
+
+- **Types** use the ``RathLLM*`` prefix (aligned with ``FlowTool*`` / ``Backend*``):
+  ``LLMMessage`` → ``RathLLMMessage``, ``LLMChatRequest`` → ``RathLLMChatRequest``,
+  ``LLMChatResponse`` → ``RathLLMChatResponse``, ``LLMSettings`` → ``RathLLMSettings``,
+  and matching response / tool-call types (see ``rath.llm`` exports).
+- **Settings loaders**: ``load_llm_settings`` → ``load_rath_llm_settings``;
+  ``default_dotenv_path`` → ``rath_llm_default_dotenv_path``.
+- **Agent**: ``OpenAIChatClient`` → ``RathOpenAIChatAgent`` (implementation in
+  ``src/rath/llm/_agent.py``).
+
 ### Breaking — ``rath.flow.tool`` and backend naming
 
 - **Flow tool calls** (canonical definitions in ``rath.flow.tool`` only):
@@ -25,13 +36,14 @@ stable API guarantees.
 
 ### Added
 
-- **`rath.llm`**: synchronous OpenAI-compatible chat completions via the official
-  `openai` SDK. `OpenAIChatClient.complete` accepts frozen `LLMChatRequest` / returns
-  `LLMChatResponse`; credentials and defaults load from `.env` / environment
-  (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_DEFAULT_MODEL`). No client-side
-  timeout or streaming in this phase. New dependencies: `openai`, `python-dotenv`.
+- **`rath.llm`**: synchronous OpenAI-compatible chat via the official `openai` SDK.
+  Use ``RathOpenAIChatAgent.complete`` with frozen ``RathLLMChatRequest`` /
+  ``RathLLMChatResponse``. Credentials load from `.env` / environment
+  (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_DEFAULT_MODEL`). No Rath-level
+  timeout or streaming in this phase. Dependencies: `openai`, `python-dotenv`.
 - **`tests/llm`**: live-API integration tests only (require `OPENAI_API_KEY`; see
-  `tests/llm/conftest.py`). No HTTP mocks. Running the **full** `pytest` suite
+  `tests/llm/conftest.py`). Assertions tie the process key to the project `.env`
+  file and exercise real completions — no HTTP mocks. The **full** `pytest` run
   therefore requires a key in `.env` or the environment.
 - Initialized the Python package with `uv`.
 - Added pytest, flake8, and mypy configuration for local quality checks.

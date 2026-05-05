@@ -6,21 +6,22 @@ from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
 __all__ = [
-    "LLMTokenUsage",
-    "LLMToolCallFunction",
-    "LLMToolCallPart",
-    "LLMAssistantMessage",
-    "LLMChatChoice",
-    "LLMChatResponse",
+    "RathLLMTokenUsage",
+    "RathLLMToolCallFunction",
+    "RathLLMToolCallPart",
+    "RathLLMAssistantMessage",
+    "RathLLMChatChoice",
+    "RathLLMChatResponse",
+    "RathLLMFinishReason",
 ]
 
-FinishReason = Literal[
+RathLLMFinishReason = Literal[
     "stop", "length", "tool_calls", "content_filter", "function_call"
 ]
 
 
 @dataclass(frozen=True, slots=True)
-class LLMTokenUsage:
+class RathLLMTokenUsage:
     """Token counts from ``usage``; optional detail dicts stay JSON-shaped."""
 
     prompt_tokens: int
@@ -31,7 +32,7 @@ class LLMTokenUsage:
 
 
 @dataclass(frozen=True, slots=True)
-class LLMToolCallFunction:
+class RathLLMToolCallFunction:
     """``function`` payload inside a tool call (name + arguments string)."""
 
     name: str
@@ -41,54 +42,54 @@ class LLMToolCallFunction:
 
 
 @dataclass(frozen=True, slots=True)
-class LLMToolCallPart:
+class RathLLMToolCallPart:
     """One entry from ``message.tool_calls``."""
 
     id: str
     type: str
-    function: LLMToolCallFunction
+    function: RathLLMToolCallFunction
 
 
 @dataclass(frozen=True, slots=True)
-class LLMAssistantMessage:
+class RathLLMAssistantMessage:
     """Assistant message on a choice (content, optional tool calls, provider extras)."""
 
     role: Literal["assistant"] = "assistant"
     content: str | None = None
     refusal: str | None = None
     reasoning_content: str | None = None
-    tool_calls: tuple[LLMToolCallPart, ...] | None = None
+    tool_calls: tuple[RathLLMToolCallPart, ...] | None = None
     function_call: Mapping[str, Any] | None = None
     annotations: tuple[Mapping[str, Any], ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class LLMChatChoice:
+class RathLLMChatChoice:
     """One element of ``choices``."""
 
     index: int
-    finish_reason: FinishReason
-    message: LLMAssistantMessage
+    finish_reason: RathLLMFinishReason
+    message: RathLLMAssistantMessage
     logprobs: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class LLMChatResponse:
+class RathLLMChatResponse:
     """Normalized non-streaming ``ChatCompletion``."""
 
     id: str
-    choices: tuple[LLMChatChoice, ...]
+    choices: tuple[RathLLMChatChoice, ...]
     created: int
     model: str
     object_type: Literal["chat.completion"] = "chat.completion"
     service_tier: str | None = None
     system_fingerprint: str | None = None
-    usage: LLMTokenUsage | None = None
+    usage: RathLLMTokenUsage | None = None
     raw: Mapping[str, Any] | None = None
 
     @property
-    def primary_choice(self) -> LLMChatChoice:
+    def primary_choice(self) -> RathLLMChatChoice:
         """The first choice (typical when ``n`` is 1)."""
         if not self.choices:
-            raise IndexError("LLMChatResponse has no choices")
+            raise IndexError("RathLLMChatResponse has no choices")
         return self.choices[0]

@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from rath.llm._types_request import LLMChatRequest, LLMFunctionTool, LLMMessage
+from rath.llm._types_request import (
+    RathLLMChatRequest,
+    RathLLMFunctionTool,
+    RathLLMMessage,
+)
 
 __all__ = ["to_create_kwargs"]
 
 
-def _message_as_openai_dict(message: LLMMessage) -> dict[str, Any]:
+def _message_as_openai_dict(message: RathLLMMessage) -> dict[str, Any]:
     d: dict[str, Any] = {"role": message.role}
     if message.content is not None:
         d["content"] = message.content
@@ -20,7 +24,7 @@ def _message_as_openai_dict(message: LLMMessage) -> dict[str, Any]:
     return d
 
 
-def _function_tool_as_openai_dict(tool: LLMFunctionTool) -> dict[str, Any]:
+def _function_tool_as_openai_dict(tool: RathLLMFunctionTool) -> dict[str, Any]:
     fn: dict[str, Any] = {
         "name": tool.name,
         "parameters": tool.parameters,
@@ -33,11 +37,11 @@ def _function_tool_as_openai_dict(tool: LLMFunctionTool) -> dict[str, Any]:
 
 
 def to_create_kwargs(
-    req: LLMChatRequest,
+    req: RathLLMChatRequest,
     *,
     default_model: str | None,
 ) -> dict[str, Any]:
-    """Translate :class:`LLMChatRequest` into SDK kwargs (non-streaming).
+    """Translate :class:`RathLLMChatRequest` into SDK kwargs (non-streaming).
 
     ``stream`` is set to ``False`` after merging ``extra_create_args``.
     ``stream=True`` in extras raises ``ValueError``.
@@ -45,7 +49,8 @@ def to_create_kwargs(
     model = req.model or default_model
     if not model:
         raise ValueError(
-            "model is required: set LLMChatRequest.model or OPENAI_DEFAULT_MODEL",
+            "model is required: set RathLLMChatRequest.model or "
+            "OPENAI_DEFAULT_MODEL",
         )
     out: dict[str, Any] = {
         "model": model,

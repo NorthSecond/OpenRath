@@ -8,12 +8,13 @@ from typing import Any, Literal, Mapping, cast
 from openai.types.chat import ChatCompletion
 
 from rath.llm._types_response import (
-    LLMAssistantMessage,
-    LLMChatChoice,
-    LLMChatResponse,
-    LLMTokenUsage,
-    LLMToolCallFunction,
-    LLMToolCallPart,
+    RathLLMAssistantMessage,
+    RathLLMChatChoice,
+    RathLLMChatResponse,
+    RathLLMFinishReason,
+    RathLLMTokenUsage,
+    RathLLMToolCallFunction,
+    RathLLMToolCallPart,
 )
 
 __all__ = ["normalize_chat_completion"]
@@ -23,25 +24,10 @@ _FINISH_REASONS = frozenset(
 )
 
 
-def _coerce_finish_reason(value: str | None) -> Literal[
-    "stop",
-    "length",
-    "tool_calls",
-    "content_filter",
-    "function_call",
-]:
+def _coerce_finish_reason(value: str | None) -> RathLLMFinishReason:
     """Map API ``finish_reason``; unknown vendor values become ``stop``."""
     if value in _FINISH_REASONS:
-        return cast(
-            Literal[
-                "stop",
-                "length",
-                "tool_calls",
-                "content_filter",
-                "function_call",
-            ],
-            value,
-        )
+        return cast(RathLLMFinishReason, value)
     return "stop"
 
 
@@ -59,10 +45,10 @@ def _parse_tool_arguments(arg_str: str) -> tuple[dict[str, Any] | None, bool]:
 
 def _normalize_tool_calls(
     raw_list: list[Mapping[str, Any]] | None,
-) -> tuple[LLMToolCallPart, ...] | None:
+) -> tuple[RathLLMToolCallPart, ...] | None:
     if not raw_list:
         return None
-    parts: list[LLMToolCallPart] = []
+    parts: list[RathLLMToolCallPart] = []
     for raw in raw_list:
         fn_raw = raw.get("function")
         if not isinstance(fn_raw, dict):
@@ -71,10 +57,10 @@ def _normalize_tool_calls(
         arg_str = str(fn_raw.get("arguments") or "")
         parsed, perr = _parse_tool_arguments(arg_str)
         parts.append(
-            LLMToolCallPart(
+            RathLLMToolCallPart(
                 id=str(raw.get("id") or ""),
                 type=str(raw.get("type") or "function"),
-                function=LLMToolCallFunction(
+                function=RathLLMToolCallFunction(
                     name=name,
                     arguments=arg_str,
                     arguments_parsed=parsed,
@@ -93,7 +79,7 @@ def _str_or_none(val: Any) -> str | None:
 
 def _normalize_assistant_message(
     msg: Mapping[str, Any],
-) -> LLMAssistantMessage:
+) -> RathLLMAssistantMessage:
     tc_raw = msg.get("tool_calls")
     if isinstance(tc_raw, list):
         tool_calls = _normalize_tool_calls(cast(list[Mapping[str, Any]], tc_raw))
@@ -111,7 +97,7 @@ def _normalize_assistant_message(
         fc_map = cast(Mapping[str, Any], fc)
     rc = msg.get("reasoning_content")
     reasoning = rc if isinstance(rc, str) else None
-    return LLMAssistantMessage(
+    return RathLLMAssistantMessage(
         role="assistant",
         content=_str_or_none(msg.get("content")),
         refusal=_str_or_none(msg.get("refusal")),
@@ -122,11 +108,11 @@ def _normalize_assistant_message(
     )
 
 
-def normalize_chat_completion(completion: ChatCompletion) -> LLMChatResponse:
-    """Convert an SDK ``ChatCompletion`` into :class:`LLMChatResponse`."""
+def normalize_chat_completion(completion: ChatCompletion) -> RathLLMChatResponse:
+    """Convert an SDK ``ChatCompletion`` into :class:`RathLLMChatResponse`."""
     raw = completion.model_dump(mode="json")
 
-    choices_out: list[LLMChatChoice] = []
+    choices_out: list[RathLLMChatChoice] = []
     for ch in raw.get("choices") or []:
         if not isinstance(ch, dict):
             continue
@@ -143,7 +129,7 @@ def normalize_chat_completion(completion: ChatCompletion) -> LLMChatResponse:
         if isinstance(logprobs, dict):
             lp = cast(Mapping[str, Any], logprobs)
         choices_out.append(
-            LLMChatChoice(
+            RathLLMChatChoice(
                 index=int(ch.get("index", 0)),
                 finish_reason=finish,
                 message=_normalize_assistant_message(msg),
@@ -151,10 +137,10 @@ def normalize_chat_completion(completion: ChatCompletion) -> LLMChatResponse:
             )
         )
 
-    usage_out: LLMTokenUsage | None = None
+    usage_out: RathLLMTokenUsage | None = None
     u = raw.get("usage")
     if isinstance(u, dict):
-        usage_out = LLMTokenUsage(
+        usage_out = RathLLMTokenUsage(
             prompt_tokens=int(u.get("prompt_tokens", 0)),
             completion_tokens=int(u.get("completion_tokens", 0)),
             total_tokens=int(u.get("total_tokens", 0)),
@@ -174,7 +160,7 @@ def normalize_chat_completion(completion: ChatCompletion) -> LLMChatResponse:
 
     object_type: Literal["chat.completion"] = "chat.completion"
 
-    return LLMChatResponse(
+    return RathLLMChatResponse(
         id=str(raw.get("id") or ""),
         choices=tuple(choices_out),
         created=int(raw.get("created") or 0),

@@ -7,17 +7,17 @@ from types import MappingProxyType
 from typing import Any, Literal, Mapping
 
 __all__ = [
-    "LLMMessage",
-    "LLMFunctionTool",
-    "LLMChatRequest",
+    "RathLLMMessage",
+    "RathLLMFunctionTool",
+    "RathLLMChatRequest",
 ]
 
 # Roles commonly accepted by Chat Completions (extend as providers add roles).
-LLMRole = Literal["system", "user", "assistant", "tool", "developer"]
+RathLLMRole = Literal["system", "user", "assistant", "tool", "developer"]
 
 
 @dataclass(frozen=True, slots=True)
-class LLMMessage:
+class RathLLMMessage:
     """One item in ``messages`` for chat ``completions.create``."""
 
     role: str
@@ -27,7 +27,7 @@ class LLMMessage:
 
 
 @dataclass(frozen=True, slots=True)
-class LLMFunctionTool:
+class RathLLMFunctionTool:
     """A function-style tool definition (``type: function``)."""
 
     name: str
@@ -37,16 +37,16 @@ class LLMFunctionTool:
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
-class LLMChatRequest:
+class RathLLMChatRequest:
     """User-facing request; maps to ``client.chat.completions.create`` keyword args.
 
-    If ``model`` is ``None``, :class:`OpenAIChatClient` fills it from
+    If ``model`` is ``None``, :class:`RathOpenAIChatAgent` fills it from
     ``OPENAI_DEFAULT_MODEL``. ``stream`` is always forced to ``False`` for Phase 1.
     """
 
-    messages: tuple[LLMMessage, ...]
+    messages: tuple[RathLLMMessage, ...]
     model: str | None = None
-    tools: tuple[LLMFunctionTool, ...] | None = None
+    tools: tuple[RathLLMFunctionTool, ...] | None = None
     tool_choice: Any | None = None
     parallel_tool_calls: bool | None = None
     response_format: dict[str, Any] | None = None

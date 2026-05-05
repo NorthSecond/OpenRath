@@ -1,4 +1,4 @@
-"""Synchronous OpenAI-compatible chat client."""
+"""Synchronous OpenAI-compatible chat agent (thin SDK wrapper)."""
 
 from __future__ import annotations
 
@@ -9,24 +9,24 @@ from openai import OpenAI
 
 from rath.llm._openai_create_kwargs import to_create_kwargs
 from rath.llm._openai_normalize import normalize_chat_completion
-from rath.llm._settings import LLMSettings, load_llm_settings
-from rath.llm._types_request import LLMChatRequest
-from rath.llm._types_response import LLMChatResponse
+from rath.llm._settings import RathLLMSettings, load_rath_llm_settings
+from rath.llm._types_request import RathLLMChatRequest
+from rath.llm._types_response import RathLLMChatResponse
 
-__all__ = ["OpenAIChatClient"]
+__all__ = ["RathOpenAIChatAgent"]
 
 
-class OpenAIChatClient:
-    """Thin wrapper around ``openai.OpenAI`` chat completions (non-streaming)."""
+class RathOpenAIChatAgent:
+    """Thin agent around ``openai.OpenAI`` chat completions (non-streaming)."""
 
     def __init__(
         self,
-        settings: LLMSettings | None = None,
+        settings: RathLLMSettings | None = None,
         *,
         dotenv_path: Path | None = None,
     ) -> None:
         self._settings = (
-            settings if settings is not None else load_llm_settings(dotenv_path)
+            settings if settings is not None else load_rath_llm_settings(dotenv_path)
         )
         init_kw: dict[str, Any] = {"api_key": self._settings.api_key}
         if self._settings.base_url:
@@ -34,10 +34,10 @@ class OpenAIChatClient:
         self._client = OpenAI(**init_kw)
 
     @property
-    def settings(self) -> LLMSettings:
+    def settings(self) -> RathLLMSettings:
         return self._settings
 
-    def complete(self, req: LLMChatRequest) -> LLMChatResponse:
+    def complete(self, req: RathLLMChatRequest) -> RathLLMChatResponse:
         """Run ``chat.completions.create`` and normalize the response."""
         kwargs = to_create_kwargs(req, default_model=self._settings.default_model)
         completion = self._client.chat.completions.create(**kwargs)
