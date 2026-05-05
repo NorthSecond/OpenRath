@@ -75,6 +75,9 @@ stable API guarantees.
   ``opensandbox-server``. With the server down the suite reports 161
   passed and 40 skipped; running the server makes those 40 cases attempt
   real Docker-backed sandbox creation.
+- **Documentation**: [docs/design/backend.md](docs/design/backend.md) —
+  repository design for `rath.backend` (API contract, Stream/Event rationale,
+  OpenSandbox and testing notes).
 
 ### Fixed
 
@@ -94,8 +97,9 @@ stable API guarantees.
 
 - Scope is intentionally limited to the backend layer. `rath.Session` and
   `rath.Agent` are not implemented yet.
-- No mocks and no smoke tests in the test suite, per the design plan in
-  `.claude/plans/rath-backend-design.md`.
+- No mocks and no smoke tests in the test suite, per
+  [docs/design/backend.md](docs/design/backend.md) and the maintainer plan
+  in `.claude/plans/`.
 - Running the OpenSandbox tests against a real server requires a working
   Docker daemon plus the OpenSandbox container images
   (`opensandbox/code-interpreter:v1.0.2` and `opensandbox/execd:v1.0.13`).
