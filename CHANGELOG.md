@@ -25,6 +25,14 @@ stable API guarantees.
 
 ### Added
 
+- **`rath.llm`**: synchronous OpenAI-compatible chat completions via the official
+  `openai` SDK. `OpenAIChatClient.complete` accepts frozen `LLMChatRequest` / returns
+  `LLMChatResponse`; credentials and defaults load from `.env` / environment
+  (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_DEFAULT_MODEL`). No client-side
+  timeout or streaming in this phase. New dependencies: `openai`, `python-dotenv`.
+- **`tests/llm`**: live-API integration tests only (require `OPENAI_API_KEY`; see
+  `tests/llm/conftest.py`). No HTTP mocks. Running the **full** `pytest` suite
+  therefore requires a key in `.env` or the environment.
 - Initialized the Python package with `uv`.
 - Added pytest, flake8, and mypy configuration for local quality checks.
 - Added the `rath` source package under `src/rath`.

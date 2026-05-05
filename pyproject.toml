@@ -19,6 +19,8 @@ classifiers = [
 ]
 dependencies = [
     "anyio>=4",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

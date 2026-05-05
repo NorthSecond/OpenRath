@@ -9,3 +9,6 @@ build/
 htmlcov/
 .coverage
 .coverage.*
+
+# Local env (API keys); use .env.example as the template.
+.env
