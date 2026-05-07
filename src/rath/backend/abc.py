@@ -14,9 +14,9 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING, ClassVar
 
-from rath.backend.core.capabilities import Capabilities
-from rath.backend.core.errors import BackendSandboxClosed
-from rath.backend.results.types import ToolResult
+from rath.backend.capabilities import Capabilities
+from rath.backend.errors import BackendSandboxClosed
+from rath.backend.results import ToolResult
 from rath.flow.tool import FlowToolCall
 
 if TYPE_CHECKING:

@@ -8,7 +8,7 @@ the caller.
 
 from __future__ import annotations
 
-from rath.backend._calls import (
+from rath.backend.flow_tool_shim import (
     FlowToolCall,
     FlowToolCodeRun,
     FlowToolCommandRun,
@@ -17,15 +17,12 @@ from rath.backend._calls import (
     FlowToolFilesRead,
     FlowToolFilesWrite,
 )
-from rath.backend.core import (
-    Backend,
-    BackendSandbox,
-    BackendSandboxSpec,
+from rath.backend.abc import Backend, BackendSandbox, BackendSandboxSpec
+from rath.backend.capabilities import Capabilities, IsolationLevel
+from rath.backend.errors import (
     BackendError,
     BackendNotFound,
     BackendSandboxClosed,
-    Capabilities,
-    IsolationLevel,
     UnsupportedFlowToolCall,
 )
 from rath.backend.registry import (
@@ -49,13 +46,12 @@ from rath.backend.results import (
 )
 from rath.backend.stream import Event, Future, Stream
 
-# Eagerly register the built-in backends. ``local`` has no extra deps; the
-# ``opensandbox`` adapter import is guarded so the package stays usable when
-# the optional extra is not installed.
-from rath.backend.adapters import local as _local  # noqa: F401
+# Eagerly register built-in backends. ``local`` has no extra deps; ``opensandbox``
+# is guarded so the package stays importable without the optional extra.
+from rath.backend import local as _local  # noqa: F401
 
 try:
-    from rath.backend.adapters import opensandbox as _opensandbox  # noqa: F401
+    from rath.backend import opensandbox as _opensandbox  # noqa: F401
 except ImportError:  # pragma: no cover - exercised when extra is missing
     pass
 

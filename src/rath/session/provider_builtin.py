@@ -1,4 +1,4 @@
-"""Default SessionLoopProvider: thread-backed LLM plus async sandbox dispatch."""
+"""Default SessionLoopExecutor: thread-backed LLM plus async sandbox dispatch."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from rath.llm import (
 from rath.session.session import Session
 
 
-class DefaultSessionLoopProvider:
+class DefaultSessionLoopExecutor:
     """Wires :class:`RathOpenAIChatClient` and :class:`ToolTable` into the loop."""
 
     __slots__ = ("_client", "_table")
@@ -53,4 +53,4 @@ class DefaultSessionLoopProvider:
         return await session.require_sandbox().dispatch(call)
 
 
-__all__ = ["DefaultSessionLoopProvider"]
+__all__ = ["DefaultSessionLoopExecutor"]

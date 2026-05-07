@@ -1,6 +1,6 @@
-"""``run_session_loop`` against :class:`~rath.backend.adapters.local.LocalBackend`.
+"""``run_session_loop`` against :class:`~rath.backend.local.LocalBackend`.
 
-Uses :class:`~tests.session.scripted_loop_provider.ScriptedSessionLoopProvider`
+Uses :class:`~tests.session.scripted_loop_executor.ScriptedSessionLoopExecutor`
 instead of HTTP to the model; sandbox execution remains real subprocess I/O.
 """
 
@@ -11,6 +11,7 @@ import json
 import pytest
 
 from rath.backend import get
+from rath.flow.agent import Agent, AgentLLMProvider
 from rath.llm import (
     RathLLMAssistantMessage,
     RathLLMChatChoice,
@@ -20,7 +21,7 @@ from rath.llm import (
 )
 from rath.session.chunk import ChunkKind
 from rath.session import Session, run_session_loop, session_registry
-from tests.session.scripted_loop_provider import ScriptedSessionLoopProvider
+from tests.session.scripted_loop_executor import ScriptedSessionLoopExecutor
 
 pytestmark = pytest.mark.anyio
 
@@ -44,13 +45,16 @@ async def test_run_session_loop_stop_without_tools() -> None:
         created=1,
         model="scripted",
     )
-    provider = ScriptedSessionLoopProvider([scripted])
+    executor = ScriptedSessionLoopExecutor([scripted])
+    agent = Agent(
+        Session.from_system_prompt("You are a scripted test assistant."),
+        AgentLLMProvider(),
+    )
 
     backend = get("local")
-    system = Session.from_system_prompt("You are a scripted test assistant.")
     async with await backend.open() as sandbox:
         user = Session.user_message("Say something short.").with_sandbox(sandbox)
-        out = await run_session_loop(user, system, provider)
+        out = await run_session_loop(user, agent, executor=executor)
 
     assert user.sandbox is None
     assert out.sandbox is sandbox
@@ -106,13 +110,16 @@ async def test_run_session_loop_write_file_via_tool_then_stop() -> None:
         created=3,
         model="scripted",
     )
-    provider = ScriptedSessionLoopProvider([first, second])
+    executor = ScriptedSessionLoopExecutor([first, second])
+    agent = Agent(
+        Session.from_system_prompt("Scripted tool harness."),
+        AgentLLMProvider(),
+    )
 
     backend = get("local")
-    system = Session.from_system_prompt("Scripted tool harness.")
     async with await backend.open() as sandbox:
         user = Session.user_message("Write the marker file.").with_sandbox(sandbox)
-        out = await run_session_loop(user, system, provider)
+        out = await run_session_loop(user, agent, executor=executor)
 
     tool_payloads = [
         json.loads(r.payload["content"])

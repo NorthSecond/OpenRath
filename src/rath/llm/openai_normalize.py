@@ -7,7 +7,7 @@ from typing import Any, Literal, Mapping, cast
 
 from openai.types.chat import ChatCompletion
 
-from rath.llm._types_response import (
+from rath.llm.chat_response import (
     RathLLMAssistantMessage,
     RathLLMChatChoice,
     RathLLMChatResponse,

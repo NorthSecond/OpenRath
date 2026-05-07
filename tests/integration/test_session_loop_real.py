@@ -12,11 +12,12 @@ import os
 import pytest
 
 from rath.backend import preferred
-from rath.flow.workflow import SingleAgent
+from rath.flow.agent import Agent, AgentLLMProvider
+from rath.flow.workflow import Workflow
 from rath.llm import RathOpenAIChatClient
 from rath.session import (
     ChunkKind,
-    DefaultSessionLoopProvider,
+    DefaultSessionLoopExecutor,
     Session,
     run_session_loop,
     session_registry,
@@ -57,19 +58,23 @@ async def test_run_session_loop_opensandbox_shell_echo() -> None:
 
     backend = preferred(["opensandbox"])
     client = RathOpenAIChatClient()
-    provider = DefaultSessionLoopProvider(client)
+    executor = DefaultSessionLoopExecutor(client)
+    model = os.environ.get("OPENAI_DEFAULT_MODEL", "").strip() or None
     marker = "RATH_SESSION_E2E_ECHO_92653"
-    system = Session.from_system_prompt(
-        "You are a test harness. Follow user instructions exactly. "
-        "When the user asks you to run a shell command via a tool, call "
-        "run_shell_command once with the cmd string they specify—no extra steps."
+    agent = Agent(
+        Session.from_system_prompt(
+            "You are a test harness. Follow user instructions exactly. "
+            "When the user asks you to run a shell command via a tool, call "
+            "run_shell_command once with the cmd string they specify—no extra steps."
+        ),
+        AgentLLMProvider(model=model),
     )
     async with await backend.open() as sandbox:
         user = Session.user_message(
             f"Use run_shell_command exactly once. The cmd must run: echo {marker}"
         ).with_sandbox(sandbox)
 
-        out = await run_session_loop(user, system, provider, max_tool_rounds=12)
+        out = await run_session_loop(user, agent, executor=executor, max_tool_rounds=12)
 
         assert out.sandbox is sandbox
         assert out.sandbox.closed is False
@@ -82,12 +87,36 @@ async def test_run_session_loop_opensandbox_shell_echo() -> None:
         assert marker in tool_blob, tool_blob
 
 
-async def test_single_agent_workflow_opensandbox_shell_echo() -> None:
-    """Same stack through :class:`SingleAgent` async forward."""
+class _ShellEchoWorkflow(Workflow):
+    """Minimal workflow forwarding to :func:`run_session_loop`."""
+
+    def __init__(
+        self,
+        system_prompt: str,
+        executor: DefaultSessionLoopExecutor,
+        model: str | None,
+    ) -> None:
+        super().__init__()
+        self.actor = Agent(
+            Session.from_system_prompt(system_prompt), AgentLLMProvider(model=model)
+        )
+        self._loop_executor = executor
+
+    async def forward_async(self, session: Session) -> Session:
+        return await run_session_loop(
+            session,
+            self.actor,
+            executor=self._loop_executor,
+        )
+
+
+async def test_workflow_opensandbox_shell_echo() -> None:
+    """Same stack through :class:`Workflow.forward_async`."""
 
     backend = preferred(["opensandbox"])
     client = RathOpenAIChatClient()
-    provider = DefaultSessionLoopProvider(client)
+    executor = DefaultSessionLoopExecutor(client)
+    model = os.environ.get("OPENAI_DEFAULT_MODEL", "").strip() or None
     marker = "RATH_SINGLE_AGENT_E2E_17402"
     system_prompt = (
         "You are a test harness. Use run_shell_command when the user asks "
@@ -98,10 +127,11 @@ async def test_single_agent_workflow_opensandbox_shell_echo() -> None:
             f"Call run_shell_command once with cmd: echo {marker}"
         ).with_sandbox(sandbox)
 
-        agent = SingleAgent(system_prompt, provider)
-        assert len(agent.named_agents()) == 1
+        wf = _ShellEchoWorkflow(system_prompt, executor, model)
+        assert len(wf.named_agents()) == 1
+        assert wf.named_agents()[0][0] == "actor"
 
-        out = await agent.forward_async(user)
+        out = await wf.forward_async(user)
 
         assert out.sandbox is sandbox
         assert _tool_rows_text(out).count(marker) >= 1

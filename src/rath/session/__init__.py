@@ -1,5 +1,6 @@
 """Session plane — chunk tables, loop, and lineage."""
 
+from rath.session.agent import Agent, AgentLLMProvider
 from rath.session.chunk import (
     ChunkKind,
     ChunkRow,
@@ -11,21 +12,23 @@ from rath.session.chunk import (
     user_text_chunk,
 )
 from rath.session.graph import SessionLineage
-from rath.session.loop import SessionLoopProvider, run_session_loop
-from rath.session.provider_builtin import DefaultSessionLoopProvider
+from rath.session.loop import SessionLoopExecutor, run_session_loop
+from rath.session.provider_builtin import DefaultSessionLoopExecutor
 from rath.session.manager import SessionRegistry, session_registry
 from rath.session.session import Session
 
 __all__ = [
+    "Agent",
+    "AgentLLMProvider",
     "assistant_turn_chunk",
     "chunk_table_to_messages",
     "ChunkKind",
     "ChunkRow",
     "ChunkTable",
-    "DefaultSessionLoopProvider",
+    "DefaultSessionLoopExecutor",
     "Session",
     "SessionLineage",
-    "SessionLoopProvider",
+    "SessionLoopExecutor",
     "SessionRegistry",
     "run_session_loop",
     "session_registry",

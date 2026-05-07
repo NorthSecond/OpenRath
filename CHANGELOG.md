@@ -8,7 +8,14 @@ stable API guarantees.
 
 ## Unreleased
 
-**Summary:** Refactor layout and naming: new ``rath.utils`` (env helpers), ``rath.backend`` split into ``core`` / ``results`` / ``stream`` / ``registry`` / ``adapters``, ``rath.flow.tool`` split into one module per call type, LLM entry renamed to ``RathOpenAIChatClient``. OpenSandbox discovery matches the official Python SDK (``OPEN_SANDBOX_DOMAIN`` / ``OPEN_SANDBOX_API_KEY``). Optional install is ``rath[opensandbox]`` (includes ``opensandbox-server``). Local server config ``.sandbox.toml`` is gitignored; generate it with ``opensandbox-server init-config``. Root ``tests/conftest.py`` loads project ``.env`` so pytest sees the same variables as the SDK.
+**Summary:** Refactor layout and naming per above, plus **breaking** API updates in this iteration:
+
+- **`run_session_loop`**: signature is ``run_session_loop(user_session, agent, *, executor, ...)``. LLM sampling options are carried by **`Agent(provider=AgentLLMProvider(...))`**. Protocol **`SessionLoopExecutor`** replaces ``SessionLoopProvider``; default type **`DefaultSessionLoopExecutor`** replaces ``DefaultSessionLoopProvider``. **SingleAgent** removed: use a **Workflow** subclass or call **run_session_loop** directly.
+- **`Agent`**: fields **`agent_session`** and **`provider: AgentLLMProvider`**; public methods **`data`** and **`__repr__`**. Implemented in **`rath.session.agent`** (**`rath.flow.agent`** re-exports).
+- **`rath.backend`**: flattened to top-level modules (**`abc`**, **`capabilities`**, **`errors`**, **`results`**, **`stream`**, **`registry`**, **`local`**, **`opensandbox`**, **`flow_tool_shim`**) instead of nested ``core`` / ``adapters`` packages.
+- **`rath.llm`**: underscore-prefixed implementation files renamed (e.g. **`chat_request.py`**, **`client.py`**).
+
+**Earlier milestone summary:** new ``rath.utils`` (env helpers), ``rath.flow.tool`` split per call type, ``RathOpenAIChatClient``. OpenSandbox via ``OPEN_SANDBOX_*`` / optional ``rath[opensandbox]``. ``.sandbox.toml`` from ``opensandbox-server init-config``. Tests load ``.env`` via ``tests/conftest.py``.
 
 ### Testing
 
@@ -28,15 +35,9 @@ stable API guarantees.
 
 ### Added — session plane / workflow MVP
 
-- ``rath.session``: chunk tables, ``Session``, ``SessionLineage``, ``SessionRegistry``,
-  async ``run_session_loop``, ``DefaultSessionLoopProvider`` (LLM via
-  ``anyio.to_thread.run_sync``, sandbox via async ``BackendSandbox.dispatch``).
-  Tool names and builders come from the global ``ToolTable``.
-
-- ``rath.flow.workflow``: ``Workflow`` (registers assigned ``Agent``) and ``SingleAgent``.
-
-- ``rath.flow.agent``: ``Agent`` bundle (system ``Session`` + ``SessionLoopProvider``).
-
+- ``rath.session``: chunk tables, ``Session``, ``SessionLineage``, ``SessionRegistry``, ``Agent``, ``AgentLLMProvider``, async ``run_session_loop`` with ``SessionLoopExecutor`` + ``DefaultSessionLoopExecutor``.
+- ``rath.flow.workflow``: ``Workflow`` (registers assigned ``Agent``).
+- ``rath.flow.agent``: re-export of ``Agent`` / ``AgentLLMProvider`` (canonical: ``rath.session.agent``).
 - ``RathLLMMessage.tool_calls`` for multi-turn tool replay in chat requests.
 
 - Integration tests: ``tests/integration/test_session_loop_real.py`` (markers

@@ -33,11 +33,11 @@ from typing import TYPE_CHECKING, ClassVar
 
 import anyio
 
-from rath.backend.core.abc import Backend, BackendSandbox, BackendSandboxSpec
-from rath.backend.core.capabilities import Capabilities, IsolationLevel
-from rath.backend.core.errors import BackendSandboxClosed, UnsupportedFlowToolCall
+from rath.backend.abc import Backend, BackendSandbox, BackendSandboxSpec
+from rath.backend.capabilities import Capabilities, IsolationLevel
+from rath.backend.errors import BackendSandboxClosed, UnsupportedFlowToolCall
 from rath.backend.registry import register
-from rath.backend.results.types import (
+from rath.backend.results import (
     CodeResult,
     CommandResult,
     FileContent,

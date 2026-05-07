@@ -1,14 +1,14 @@
 """Tool-aware session loop — async orchestration for chat + sandbox tools.
 
 **Async model:** this module is **async-first**. The sync LLM client runs inside
-``anyio.to_thread.run_sync`` via :class:`DefaultSessionLoopProvider`. Do **not**
+``anyio.to_thread.run_sync`` via :class:`~rath.session.provider_builtin.DefaultSessionLoopExecutor`. Do **not**
 nest ``anyio.run()`` / ``asyncio.run()`` inside an already running loop.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from rath.backend import (
     CodeResult,
@@ -18,6 +18,7 @@ from rath.backend import (
     FileWriteResult,
     ToolResult,
 )
+from rath.session.agent import Agent, AgentLLMProvider
 from rath.flow.tool import (
     FlowToolCall,
     ToolTable,
@@ -28,6 +29,7 @@ from rath.llm import (
     RathLLMChatRequest,
     RathLLMChatResponse,
     RathLLMFunctionTool,
+    RathLLMMessage,
 )
 from rath.session.chunk import (
     ChunkTable,
@@ -41,8 +43,8 @@ from rath.session.session import Session
 
 
 @runtime_checkable
-class SessionLoopProvider(Protocol):
-    """Strategy object for LLM + sandbox execution (no Workflow import)."""
+class SessionLoopExecutor(Protocol):
+    """Runs LLM completions and dispatches sandbox tools for :func:`run_session_loop`."""
 
     async def complete(self, req: RathLLMChatRequest) -> RathLLMChatResponse:
         """Run one chat completion."""
@@ -56,6 +58,46 @@ class SessionLoopProvider(Protocol):
 
     def tool_schemas(self) -> tuple[RathLLMFunctionTool, ...]:
         """OpenAI function defs (ToolTable-backed)."""
+
+
+def _chat_request_from_loop(
+    messages: tuple[RathLLMMessage, ...],
+    tools: tuple[RathLLMFunctionTool, ...] | None,
+    prefs: AgentLLMProvider,
+    *,
+    default_tool_choice: Any,
+) -> RathLLMChatRequest:
+    """Fold :class:`~rath.session.agent.AgentLLMProvider` into a concrete request."""
+
+    return RathLLMChatRequest(
+        messages=messages,
+        tools=tools,
+        tool_choice=prefs.tool_choice
+        if prefs.tool_choice is not None
+        else default_tool_choice,
+        parallel_tool_calls=prefs.parallel_tool_calls,
+        model=prefs.model,
+        temperature=prefs.temperature,
+        top_p=prefs.top_p,
+        max_completion_tokens=prefs.max_completion_tokens,
+        max_tokens=prefs.max_tokens,
+        stop=prefs.stop,
+        n=prefs.n,
+        seed=prefs.seed,
+        frequency_penalty=prefs.frequency_penalty,
+        presence_penalty=prefs.presence_penalty,
+        response_format=prefs.response_format,
+        logit_bias=prefs.logit_bias,
+        logprobs=prefs.logprobs,
+        top_logprobs=prefs.top_logprobs,
+        reasoning_effort=prefs.reasoning_effort,
+        verbosity=prefs.verbosity,
+        metadata=prefs.metadata,
+        user=prefs.user,
+        store=prefs.store,
+        service_tier=prefs.service_tier,
+        extra_create_args=prefs.extra_create_args,
+    )
 
 
 def _summarize_tool_result(_call: FlowToolCall, raw: ToolResult | bool) -> str:
@@ -104,20 +146,26 @@ def _summarize_tool_result(_call: FlowToolCall, raw: ToolResult | bool) -> str:
 
 async def run_session_loop(
     user_session: Session,
-    system_session: Session,
-    provider: SessionLoopProvider,
+    agent: Agent,
     *,
+    executor: SessionLoopExecutor,
     tool_table: ToolTable | None = None,
     max_tool_rounds: int = 16,
 ) -> Session:
-    """Run ``system + user`` messages with tool calls; return a new Session.
+    """Run agent system session + user messages with tools; return a new Session.
 
     The returned session **rebinds** the sandbox taken from ``user_session``.
     After success, ``user_session`` no longer holds that sandbox.
+
+    HTTP / sandbox dispatch is delegated to ``executor``; sampling options come from
+    ``agent.provider``.
     """
 
     table = tool_table or global_tool_table()
     register_builtin_session_tools(table)
+
+    system_session = agent.agent_session
+    prefs = agent.provider
 
     rows_list: list = list(user_session.chunk_table.rows)
     sb = user_session.take_sandbox()
@@ -135,7 +183,7 @@ async def run_session_loop(
     reg.register(out)
     reg.set_active(out)
 
-    tool_schemas = provider.tool_schemas()
+    tool_schemas = executor.tool_schemas()
     if not tool_schemas:
         tool_schemas = table.schemas()
 
@@ -144,13 +192,13 @@ async def run_session_loop(
         tail = chunk_table_to_messages(ChunkTable(rows=tuple(rows_list)))
         messages = head + tail
 
-        req = RathLLMChatRequest(
-            messages=messages,
-            model=None,
-            tools=tool_schemas,
-            tool_choice="auto",
+        req = _chat_request_from_loop(
+            messages,
+            tool_schemas,
+            prefs,
+            default_tool_choice="auto",
         )
-        resp = await provider.complete(req)
+        resp = await executor.complete(req)
         choice = resp.primary_choice
         msg = choice.message
         tcalls = msg.tool_calls
@@ -166,7 +214,7 @@ async def run_session_loop(
                         f"tool {tc.function.name!r} returned non-JSON arguments",
                     )
                 call = table.build(tc.function.name, parsed)
-                raw = await provider.dispatch_tool(out, call)
+                raw = await executor.dispatch_tool(out, call)
                 body = _summarize_tool_result(call, raw)
                 rows_list.append(
                     tool_feedback_chunk(tc.id, tc.function.name, body)
@@ -185,6 +233,6 @@ async def run_session_loop(
 
 
 __all__ = [
-    "SessionLoopProvider",
+    "SessionLoopExecutor",
     "run_session_loop",
 ]

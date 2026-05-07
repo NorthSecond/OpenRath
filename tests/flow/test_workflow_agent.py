@@ -5,11 +5,12 @@ from __future__ import annotations
 import pytest
 
 from rath.backend import get
-from rath.flow.workflow import SingleAgent
+from rath.flow.agent import Agent, AgentLLMProvider
+from rath.flow.workflow import Workflow
 from rath.llm import RathLLMAssistantMessage, RathLLMChatChoice, RathLLMChatResponse
-from rath.session import Session, session_registry
+from rath.session import Session, run_session_loop, session_registry
 from rath.session.chunk import ChunkKind
-from tests.session.scripted_loop_provider import ScriptedSessionLoopProvider
+from tests.session.scripted_loop_executor import ScriptedSessionLoopExecutor
 
 pytestmark = pytest.mark.anyio
 
@@ -20,7 +21,20 @@ def _clear_active_session_registry() -> None:
     session_registry().set_active(None)
 
 
-async def test_single_agent_registers_leaf_and_runs_scripted_loop() -> None:
+class _ScriptedEchoWorkflow(Workflow):
+    def __init__(self, scripted: RathLLMChatResponse) -> None:
+        super().__init__()
+        self._exec = ScriptedSessionLoopExecutor([scripted])
+        self.agent = Agent(
+            Session.from_system_prompt("System prompt for workflow test."),
+            AgentLLMProvider(),
+        )
+
+    async def forward_async(self, session: Session) -> Session:
+        return await run_session_loop(session, self.agent, executor=self._exec)
+
+
+async def test_workflow_registers_agent_and_runs_loop() -> None:
     scripted = RathLLMChatResponse(
         id="wf1",
         choices=(
@@ -33,18 +47,18 @@ async def test_single_agent_registers_leaf_and_runs_scripted_loop() -> None:
         created=9,
         model="scripted",
     )
-    provider = ScriptedSessionLoopProvider([scripted])
-    agent = SingleAgent("System prompt for workflow test.", provider)
+    wf = _ScriptedEchoWorkflow(scripted)
 
-    assert len(agent.named_agents()) == 1
-    name, leaf = agent.named_agents()[0]
+    assert len(wf.named_agents()) == 1
+    name, leaf = wf.named_agents()[0]
     assert name == "agent"
-    assert leaf.provider is provider
+    assert isinstance(leaf, Agent)
+    assert isinstance(leaf.provider, AgentLLMProvider)
 
     backend = get("local")
     async with await backend.open() as sandbox:
         user = Session.user_message("Trigger scripted reply.").with_sandbox(sandbox)
-        out = await agent.forward_async(user)
+        out = await wf.forward_async(user)
 
     assert out.sandbox is sandbox
     assistant_chunks = [

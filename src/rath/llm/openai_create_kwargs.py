@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from rath.llm._types_request import (
+from rath.llm.chat_request import (
     RathLLMChatRequest,
     RathLLMFunctionTool,
     RathLLMMessage,

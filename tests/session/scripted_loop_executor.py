@@ -2,7 +2,7 @@
 
 ``complete`` returns a fixed sequence of :class:`~rath.llm.RathLLMChatResponse`
 values. ``dispatch_tool`` forwards to the real sandbox so tool execution stays
-honest (typically :class:`~rath.backend.adapters.local.LocalBackend`).
+honest (typically :class:`~rath.backend.local.LocalBackend`).
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from rath.llm import RathLLMChatRequest, RathLLMChatResponse, RathLLMFunctionToo
 from rath.session.session import Session
 
 
-class ScriptedSessionLoopProvider:
+class ScriptedSessionLoopExecutor:
     """Pops scripted chat responses; dispatches tools on the live sandbox."""
 
     __slots__ = ("_queue",)

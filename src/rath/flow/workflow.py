@@ -7,7 +7,6 @@ import anyio
 from typing import Any
 
 from rath.flow.agent import Agent
-from rath.session.loop import SessionLoopProvider, run_session_loop
 from rath.session.session import Session
 
 
@@ -51,21 +50,4 @@ class Workflow:
         return self.forward(session)
 
 
-class SingleAgent(Workflow):
-    """One-Agent workflow wrapping :func:`~rath.session.loop.run_session_loop`."""
-
-    __slots__ = ("agent",)
-
-    def __init__(self, system_prompt: str, provider: SessionLoopProvider) -> None:
-        super().__init__()
-        self.agent = Agent(Session.from_system_prompt(system_prompt), provider)
-
-    async def forward_async(self, session: Session) -> Session:
-        return await run_session_loop(
-            session,
-            self.agent.system_session,
-            self.agent.provider,
-        )
-
-
-__all__ = ["Workflow", "SingleAgent"]
+__all__ = ["Workflow"]

@@ -7,11 +7,11 @@ from typing import Any
 
 from openai import OpenAI
 
-from rath.llm._openai_create_kwargs import to_create_kwargs
-from rath.llm._openai_normalize import normalize_chat_completion
-from rath.llm._settings import RathLLMSettings, load_rath_llm_settings
-from rath.llm._types_request import RathLLMChatRequest
-from rath.llm._types_response import RathLLMChatResponse
+from rath.llm.openai_create_kwargs import to_create_kwargs
+from rath.llm.openai_normalize import normalize_chat_completion
+from rath.llm.settings import RathLLMSettings, load_rath_llm_settings
+from rath.llm.chat_request import RathLLMChatRequest
+from rath.llm.chat_response import RathLLMChatResponse
 
 __all__ = ["RathOpenAIChatClient"]
 

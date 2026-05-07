@@ -1,20 +1,20 @@
 """OpenAI-compatible LLM access (synchronous chat completions)."""
 
-from rath.llm._client import RathOpenAIChatClient
-from rath.llm._openai_create_kwargs import to_create_kwargs
-from rath.llm._openai_normalize import normalize_chat_completion
-from rath.llm._settings import (
+from rath.llm.client import RathOpenAIChatClient
+from rath.llm.openai_create_kwargs import to_create_kwargs
+from rath.llm.openai_normalize import normalize_chat_completion
+from rath.llm.settings import (
     RathLLMSettings,
     load_rath_llm_settings,
     rath_llm_default_dotenv_path,
 )
-from rath.llm._types_request import (
+from rath.llm.chat_request import (
     RathLLMChatRequest,
     RathLLMFunctionTool,
     RathLLMMessage,
     RathLLMRole,
 )
-from rath.llm._types_response import (
+from rath.llm.chat_response import (
     RathLLMAssistantMessage,
     RathLLMChatChoice,
     RathLLMChatResponse,

@@ -1,4 +1,4 @@
-"""Tests for :mod:`rath.backend.core.errors`."""
+"""Tests for :mod:`rath.backend.errors`."""
 
 from __future__ import annotations
 
