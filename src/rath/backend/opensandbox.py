@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, ClassVar
 from rath.backend.abc import Backend, BackendSandbox, BackendSandboxSpec
 from rath.backend.capabilities import Capabilities, IsolationLevel
 from rath.backend.dedicated_loop import shared_opensandbox_loop
-from rath.backend.errors import BackendSandboxClosed, UnsupportedBackendTool
 from rath.backend.registry import register
 from rath.backend.results import (
     CodeResult,
@@ -31,6 +30,7 @@ from rath.backend.results import (
     FileEntries,
     FileEntry,
     FileWriteResult,
+    ToolExecutionFailure,
     ToolResult,
 )
 from rath.backend.tool_types import (
@@ -203,11 +203,30 @@ class OpenSandboxBackend(Backend):
         self, sandbox: BackendSandbox, call: BackendTool
     ) -> ToolResult | bool:
         if sandbox.closed:
-            raise BackendSandboxClosed(sandbox.handle)
+            return ToolExecutionFailure(
+                kind="sandbox_closed",
+                message=f"backend sandbox {sandbox.handle!r} is already closed",
+            )
         native = self._natives.get(sandbox.handle)
         if native is None:
-            raise BackendSandboxClosed(sandbox.handle)
-        return self._runner.run(self._dispatch_coro(native, call))
+            return ToolExecutionFailure(
+                kind="sandbox_closed",
+                message="native sandbox handle is missing; cannot dispatch",
+            )
+        try:
+            return self._runner.run(self._dispatch_coro(native, call))
+        except TimeoutError as exc:
+            return ToolExecutionFailure(
+                kind="timeout",
+                message=str(exc),
+                detail=type(exc).__name__,
+            )
+        except Exception as exc:
+            return ToolExecutionFailure(
+                kind="dispatch_error",
+                message=str(exc),
+                detail=type(exc).__name__,
+            )
 
     async def _dispatch_coro(
         self, native: "_OSBSandboxT", call: BackendTool
@@ -226,7 +245,14 @@ class OpenSandboxBackend(Backend):
             case BackendToolCodeRun():
                 return await self._code_run(native, call)
             case _:
-                raise UnsupportedBackendTool(type(call), self.name)
+                return ToolExecutionFailure(
+                    kind="unsupported_tool",
+                    message=(
+                        f"backend {self.name!r} does not support backend tool payload "
+                        f"{type(call).__name__!r}"
+                    ),
+                    detail=type(call).__name__,
+                )
 
     def _resolve(self, path: str) -> str:
         """Resolve a tool-call path: absolute paths pass through, relative
@@ -244,7 +270,11 @@ class OpenSandboxBackend(Backend):
     ) -> CommandResult:
         """``commands.run`` has no stdin; non-``None`` ``call.stdin`` is rejected."""
         if call.stdin is not None:
-            raise UnsupportedBackendTool(type(call), self.name)
+            return ToolExecutionFailure(
+                kind="unsupported_tool",
+                message=f"backend {self.name!r} does not support stdin on commands.run",
+                detail="BackendToolCommandRun",
+            )
         cmd_str = (
             call.cmd
             if isinstance(call.cmd, str)
@@ -290,8 +320,16 @@ class OpenSandboxBackend(Backend):
         except SandboxException as exc:
             msg = str(exc).lower()
             if "not found" in msg or "no such file" in msg or "404" in msg:
-                raise FileNotFoundError(path) from exc
-            raise
+                return ToolExecutionFailure(
+                    kind="file_not_found",
+                    message=str(exc),
+                    detail=str(path),
+                )
+            return ToolExecutionFailure(
+                kind="sandbox_sdk_error",
+                message=str(exc),
+                detail=type(exc).__name__,
+            )
 
     async def _files_write(
         self, native: "_OSBSandboxT", call: BackendToolFilesWrite
@@ -333,12 +371,21 @@ class OpenSandboxBackend(Backend):
         self, native: "_OSBSandboxT", call: BackendToolCodeRun
     ) -> CodeResult:
         if not _CI_AVAILABLE:  # pragma: no cover - guarded by is_available
-            raise RuntimeError(
-                "code-interpreter SDK is not installed; "
-                "install with `pip install rath[opensandbox]`"
+            return ToolExecutionFailure(
+                kind="sdk_missing",
+                message=(
+                    "code-interpreter SDK is not installed; "
+                    "install with `pip install rath[opensandbox]`"
+                ),
             )
         if call.language not in _SUPPORTED_LANGUAGES:
-            raise UnsupportedBackendTool(type(call), self.name)
+            return ToolExecutionFailure(
+                kind="unsupported_tool",
+                message=(
+                    f"backend {self.name!r} does not support language {call.language!r}"
+                ),
+                detail=call.language,
+            )
         ci = await CodeInterpreter.create(native)
         execution = await _await_maybe_timeout(
             ci.codes.run(call.code, language=call.language),

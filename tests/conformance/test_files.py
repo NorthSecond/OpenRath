@@ -9,6 +9,7 @@ from rath.backend import (
     FileContent,
     FileEntries,
     FileWriteResult,
+    ToolExecutionFailure,
     BackendToolFilesExists,
     BackendToolFilesList,
     BackendToolFilesRead,
@@ -55,10 +56,11 @@ def test_list_returns_sorted_entries(backend: Backend) -> None:
         assert {"a.txt", "b.txt", "c.txt"}.issubset(set(names))
 
 
-def test_read_missing_path_raises(backend: Backend) -> None:
+def test_read_missing_path_returns_failure(backend: Backend) -> None:
     with backend.open() as sb:
-        with pytest.raises(FileNotFoundError):
-            sb.dispatch(BackendToolFilesRead(path="does-not-exist.txt"))
+        r = sb.dispatch(BackendToolFilesRead(path="does-not-exist.txt"))
+        assert isinstance(r, ToolExecutionFailure)
+        assert r.kind == "file_not_found"
 
 
 def test_write_creates_parent_dirs(backend: Backend) -> None:

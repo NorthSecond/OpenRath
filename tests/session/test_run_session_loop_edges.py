@@ -75,7 +75,7 @@ def test_missing_user_sandbox_raises() -> None:
         )
 
 
-def test_tool_arguments_parse_error_raises_value_error() -> None:
+def test_tool_arguments_parse_error_surfaces_in_tool_chunk() -> None:
     part = RathLLMToolCallPart(
         id="bad",
         type="function",
@@ -98,22 +98,39 @@ def test_tool_arguments_parse_error_raises_value_error() -> None:
         created=1,
         model="script",
     )
-    executor = ScriptedSessionLoopExecutor([resp])
+    stop = RathLLMChatResponse(
+        id="stop",
+        choices=(
+            RathLLMChatChoice(
+                index=0,
+                finish_reason="stop",
+                message=RathLLMAssistantMessage(content="done"),
+            ),
+        ),
+        created=2,
+        model="script",
+    )
+    executor = ScriptedSessionLoopExecutor([resp, stop])
 
     backend = get("local")
     agent = Agent(Session.from_system_prompt("s"), Provider())
     with backend.open() as sb:
         user = Session.user_message("x").with_sandbox(sb)
-        with pytest.raises(ValueError, match="non-JSON"):
-            run_session_loop(
-                user,
-                agent.agent_session,
-                agent_provider=agent.provider,
-                executor=executor,
-            )
+        out = run_session_loop(
+            user,
+            agent.agent_session,
+            agent_provider=agent.provider,
+            executor=executor,
+        )
+
+    tool_rows = [r for r in out.chunk_table.rows if r.kind == ChunkKind.TOOL_RESULT]
+    assert len(tool_rows) >= 1
+    payload = json.loads(tool_rows[0].payload["content"])
+    assert payload.get("ok") is False
+    assert payload.get("error_kind") == "invalid_tool_arguments"
 
 
-def test_unknown_tool_name_raises_key_error() -> None:
+def test_unknown_tool_name_surfaces_in_tool_chunk() -> None:
     part = RathLLMToolCallPart(
         id="u",
         type="function",
@@ -136,18 +153,35 @@ def test_unknown_tool_name_raises_key_error() -> None:
         created=2,
         model="script",
     )
-    executor = ScriptedSessionLoopExecutor([resp])
+    stop = RathLLMChatResponse(
+        id="stop2",
+        choices=(
+            RathLLMChatChoice(
+                index=0,
+                finish_reason="stop",
+                message=RathLLMAssistantMessage(content="done"),
+            ),
+        ),
+        created=3,
+        model="script",
+    )
+    executor = ScriptedSessionLoopExecutor([resp, stop])
     backend = get("local")
     agent = Agent(Session.from_system_prompt("s"), Provider())
     with backend.open() as sb:
         user = Session.user_message("x").with_sandbox(sb)
-        with pytest.raises(KeyError):
-            run_session_loop(
-                user,
-                agent.agent_session,
-                agent_provider=agent.provider,
-                executor=executor,
-            )
+        out = run_session_loop(
+            user,
+            agent.agent_session,
+            agent_provider=agent.provider,
+            executor=executor,
+        )
+
+    tool_rows = [r for r in out.chunk_table.rows if r.kind == ChunkKind.TOOL_RESULT]
+    assert len(tool_rows) >= 1
+    payload = json.loads(tool_rows[0].payload["content"])
+    assert payload.get("ok") is False
+    assert payload.get("error_kind") == "tool_build_failed"
 
 
 def test_max_tool_rounds_caps_iterations_without_final_stop() -> None:
@@ -239,3 +273,66 @@ def test_shell_command_puts_stdout_json_in_tool_chunk() -> None:
         seen_cmd_json = True
         break
     assert seen_cmd_json
+
+
+class _ExplodingExecutor(ScriptedSessionLoopExecutor):
+    """Fails tool dispatch to exercise loop scheme A wrapping."""
+
+    def dispatch_tool(self, session, call):  # type: ignore[no-untyped-def]
+        raise RuntimeError("simulated dispatch failure")
+
+
+def test_dispatch_exception_surfaces_in_tool_chunk() -> None:
+    body = {"cmd": "echo x"}
+    part = RathLLMToolCallPart(
+        id="ex",
+        type="function",
+        function=RathLLMToolCallFunction(
+            name="run_shell_command",
+            arguments=json.dumps(body),
+            arguments_parsed=body,
+            arguments_parse_error=False,
+        ),
+    )
+    first = RathLLMChatResponse(
+        id="e1",
+        choices=(
+            RathLLMChatChoice(
+                index=0,
+                finish_reason="tool_calls",
+                message=RathLLMAssistantMessage(tool_calls=(part,)),
+            ),
+        ),
+        created=1,
+        model="script",
+    )
+    second = RathLLMChatResponse(
+        id="e2",
+        choices=(
+            RathLLMChatChoice(
+                index=0,
+                finish_reason="stop",
+                message=RathLLMAssistantMessage(content="ok"),
+            ),
+        ),
+        created=2,
+        model="script",
+    )
+    executor = _ExplodingExecutor([first, second])
+    backend = get("local")
+    agent = Agent(Session.from_system_prompt("ex"), Provider())
+    with backend.open() as sb:
+        user = Session.user_message("x").with_sandbox(sb)
+        out = run_session_loop(
+            user,
+            agent.agent_session,
+            agent_provider=agent.provider,
+            executor=executor,
+        )
+
+    tool_rows = [r for r in out.chunk_table.rows if r.kind == ChunkKind.TOOL_RESULT]
+    assert len(tool_rows) == 1
+    payload = json.loads(tool_rows[0].payload["content"])
+    assert payload.get("ok") is False
+    assert payload.get("error_kind") == "dispatch_exception"
+    assert "RuntimeError" in payload.get("message", "")

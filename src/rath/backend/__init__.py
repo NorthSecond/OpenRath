@@ -27,6 +27,7 @@ from rath.backend.results import (
     FileEntries,
     FileEntry,
     FileWriteResult,
+    ToolExecutionFailure,
     ToolResult,
 )
 from rath.backend.stream import Event, Future, Stream
@@ -59,6 +60,7 @@ __all__ = [
     "BackendToolFilesExists",
     "BackendToolCodeRun",
     "ToolResult",
+    "ToolExecutionFailure",
     "CommandResult",
     "FileContent",
     "FileEntry",

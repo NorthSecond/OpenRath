@@ -6,9 +6,9 @@ from __future__ import annotations
 
 
 
+from pathlib import Path
+
 import pytest
-
-
 
 from rath.backend import get
 
@@ -126,4 +126,15 @@ def test_require_sandbox_raises_after_backend_closed() -> None:
 
         user.require_sandbox()
 
+
+def test_to_accepts_str_spec_as_working_dir(tmp_path: Path) -> None:
+    root = str(tmp_path.resolve())
+    s = Session.user_message("w").to("local", spec=root)
+    assert s._sandbox_open_spec is not None
+    assert s._sandbox_open_spec.working_dir == root
+    sb = s.take_sandbox()
+    try:
+        assert Path(sb.handle).resolve() == Path(root).resolve()
+    finally:
+        sb.backend.close(sb)
 

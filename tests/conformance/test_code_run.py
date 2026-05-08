@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from rath.backend import Backend, CodeResult, BackendToolCodeRun
+from rath.backend import Backend, CodeResult, BackendToolCodeRun, ToolExecutionFailure
 
 
 def test_python_basic_print(backend: Backend) -> None:
@@ -23,9 +23,10 @@ def test_python_runtime_error_populates_error(backend: Backend) -> None:
         assert "ValueError" in result.error or "boom" in result.error
 
 
-def test_python_timeout_raises(backend: Backend) -> None:
+def test_python_timeout_returns_failure(backend: Backend) -> None:
     with backend.open() as sb:
-        with pytest.raises(TimeoutError):
-            sb.dispatch(
-                BackendToolCodeRun(code="import time; time.sleep(5)", timeout=0.5)
-            )
+        r = sb.dispatch(
+            BackendToolCodeRun(code="import time; time.sleep(5)", timeout=0.5)
+        )
+        assert isinstance(r, ToolExecutionFailure)
+        assert r.kind == "timeout"

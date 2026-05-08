@@ -12,6 +12,19 @@ from rath.session.chunk import ChunkKind, ChunkRow, ChunkTable
 from rath.session.graph.kind import LineageKind
 from rath.session.graph.legacy import SessionLineage
 
+
+def _coerce_sandbox_open_spec(
+    spec: BackendSandboxSpec | str | None,
+) -> BackendSandboxSpec | None:
+    """Accept :class:`~rath.backend.abc.BackendSandboxSpec` or a ``working_dir`` path string."""
+
+    if spec is None:
+        return None
+    if isinstance(spec, str):
+        return BackendSandboxSpec(working_dir=spec)
+    return spec
+
+
 # Tensor-style ellipsis for :meth:`Session.__str__` / ``__repr__``.
 _SESSION_REPR_CHUNK_EDGE = 4
 _SESSION_REPR_TEXT_MAX = 256
@@ -139,13 +152,17 @@ class Session:
         self,
         backend: str = "local",
         *,
-        spec: BackendSandboxSpec | None = None,
+        spec: BackendSandboxSpec | str | None = None,
     ) -> Session:
-        """Close any current handle, set target backend, and return ``self`` (chainable)."""
+        """Close any current handle, set target backend, and return ``self`` (chainable).
+
+        ``spec`` may be a :class:`~rath.backend.abc.BackendSandboxSpec` or a string
+        path interpreted as ``BackendSandboxSpec(working_dir=...)`` (e.g. ``"."``).
+        """
 
         self.close_sandbox()
         self.sandbox_backend = backend
-        self._sandbox_open_spec = spec
+        self._sandbox_open_spec = _coerce_sandbox_open_spec(spec)
         return self
 
     def close_sandbox(self) -> Session:
@@ -166,7 +183,8 @@ class Session:
                 "session has no sandbox backend; call session.to(\"local\") "
                 "or session.bind_sandbox(...)"
             )
-        self.sandbox = get(self.sandbox_backend).open(self._sandbox_open_spec)
+        open_spec = _coerce_sandbox_open_spec(self._sandbox_open_spec)
+        self.sandbox = get(self.sandbox_backend).open(open_spec)
 
     def __enter__(self) -> Session:
         if self._cm_depth == 0:

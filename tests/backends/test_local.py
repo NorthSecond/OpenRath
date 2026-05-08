@@ -15,7 +15,7 @@ from rath.backend import (
     BackendToolFilesRead,
     BackendToolFilesWrite,
     IsolationLevel,
-    UnsupportedBackendTool,
+    ToolExecutionFailure,
     get,
 )
 from rath.backend.local import LocalBackend
@@ -79,8 +79,11 @@ def test_user_supplied_working_dir_honoured(tmp_path: object) -> None:
         backend.close(sb)
 
 
-def test_unknown_code_language_raises_unsupported() -> None:
+def test_command_missing_executable_returns_failure() -> None:
     backend = get("local")
     with backend.open() as sb:
-        with pytest.raises(UnsupportedBackendTool):
-            sb.dispatch(BackendToolCodeRun(code="puts 'hi'", language="ruby"))
+        r = sb.dispatch(BackendToolCommandRun(cmd=["/nonexistent/rath_no_such_exe_xyz"]))
+        assert isinstance(r, ToolExecutionFailure)
+        assert r.kind in ("os_error", "unexpected")
+
+

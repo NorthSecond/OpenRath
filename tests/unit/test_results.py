@@ -14,10 +14,12 @@ from rath.backend import (
     FileEntries,
     FileEntry,
     FileWriteResult,
+    ToolExecutionFailure,
     ToolResult,
 )
 
 _RESULTS: list[ToolResult] = [
+    ToolExecutionFailure(kind="k", message="m", detail="d"),
     CommandResult(exit_code=0, stdout=b"hi", stderr=b"", elapsed_ms=1.0),
     FileContent(data=b"hello"),
     FileContent(data="hello"),

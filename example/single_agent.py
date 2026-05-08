@@ -26,6 +26,8 @@ if __name__ == "__main__":
     )
     print(agent_wf)
 
-    user_session = Session.user_message(text="Hello, who are you?").to("local")
+    user_session = Session.user_message(
+        text="Please summarize this repository in one short paragraph."
+    ).to("local", spec="./")
     out_session = agent_wf.forward(user_session)
     print(out_session)

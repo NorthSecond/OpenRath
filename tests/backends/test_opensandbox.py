@@ -11,6 +11,7 @@ from rath.backend import (
     CommandResult,
     FileContent,
     FileEntries,
+    ToolExecutionFailure,
     BackendToolCodeRun,
     BackendToolCommandRun,
     BackendToolFilesExists,
@@ -18,7 +19,6 @@ from rath.backend import (
     BackendToolFilesRead,
     BackendToolFilesWrite,
     IsolationLevel,
-    UnsupportedBackendTool,
     get,
 )
 from rath.backend.opensandbox import OpenSandboxBackend
@@ -64,14 +64,15 @@ def test_open_close_roundtrip() -> None:
     assert backend.sandbox_count() == 0
 
 
-def test_command_run_stdin_raises_unsupported() -> None:
-    """OpenSandbox's commands.run has no stdin; the adapter must surface that."""
+def test_command_run_stdin_rejected() -> None:
+    """OpenSandbox's commands.run has no stdin; adapter returns a structured failure."""
     backend = get("opensandbox")
     with backend.open() as sb:
-        with pytest.raises(UnsupportedBackendTool):
-            sb.dispatch(
-                BackendToolCommandRun(cmd=["python3", "-c", "pass"], stdin=b"x")
-            )
+        r = sb.dispatch(
+            BackendToolCommandRun(cmd=["python3", "-c", "pass"], stdin=b"x")
+        )
+        assert isinstance(r, ToolExecutionFailure)
+        assert r.kind == "unsupported_tool"
 
 
 def test_files_list_returns_entries_with_metadata() -> None:
@@ -101,11 +102,12 @@ def test_files_exists_true_and_false() -> None:
         )
 
 
-def test_unsupported_language_raises() -> None:
+def test_unsupported_language_returns_failure() -> None:
     backend = get("opensandbox")
     with backend.open() as sb:
-        with pytest.raises(UnsupportedBackendTool):
-            sb.dispatch(BackendToolCodeRun(code="puts 'hi'", language="ruby"))
+        r = sb.dispatch(BackendToolCodeRun(code="puts 'hi'", language="ruby"))
+        assert isinstance(r, ToolExecutionFailure)
+        assert r.kind == "unsupported_tool"
 
 
 def test_code_run_python_round_trip() -> None:

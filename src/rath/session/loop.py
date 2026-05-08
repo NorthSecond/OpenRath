@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Protocol, runtime_checkable
 
 from rath.backend import (
@@ -11,6 +12,7 @@ from rath.backend import (
     FileContent,
     FileEntries,
     FileWriteResult,
+    ToolExecutionFailure,
     ToolResult,
 )
 from rath.flow.tool import (
@@ -37,6 +39,8 @@ from rath.session.chunk import (
 from rath.session.graph import LineageKind, LineageRecorder, SessionLineage
 from rath.session.manager import session_registry
 from rath.session.session import Session
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -97,9 +101,33 @@ def _chat_request_from_loop(
     )
 
 
+def _loop_tool_error_payload(
+    kind: str, message: str, *, detail: str | None = None
+) -> str:
+    """JSON string for a tool roundtrip failure (scheme A) visible to the model."""
+
+    payload: dict[str, Any] = {
+        "ok": False,
+        "error_kind": kind,
+        "message": message,
+    }
+    if detail:
+        payload["detail"] = detail[:4000]
+    return json.dumps(payload)
+
+
 def _summarize_tool_result(_call: FlowToolCall, raw: ToolResult | bool) -> str:
     """JSON text for the next ``role=tool`` message."""
 
+    if isinstance(raw, ToolExecutionFailure):
+        return json.dumps(
+            {
+                "ok": False,
+                "error_kind": raw.kind,
+                "message": raw.message,
+                **({"detail": raw.detail} if raw.detail else {}),
+            }
+        )
     if isinstance(raw, bool):
         return json.dumps({"ok": raw})
     if isinstance(raw, CommandResult):
@@ -227,16 +255,46 @@ def run_session_loop(
                 assistant_turn_chunk(tool_calls=tcalls, content=msg.content)
             )
             for tc in tcalls:
-                parsed = tc.function.arguments_parsed
-                if parsed is None or tc.function.arguments_parse_error:
-                    raise ValueError(
-                        f"tool {tc.function.name!r} returned non-JSON arguments",
+                tool_name = tc.function.name
+                if (
+                    tc.function.arguments_parsed is None
+                    or tc.function.arguments_parse_error
+                ):
+                    raw_dump = tc.function.arguments or ""
+                    if len(raw_dump) > 2000:
+                        raw_dump = raw_dump[:2000] + "...(truncated)"
+                    body = _loop_tool_error_payload(
+                        "invalid_tool_arguments",
+                        (
+                            f"tool {tool_name!r} returned non-JSON "
+                            f"or unparseable arguments"
+                        ),
+                        detail=raw_dump,
                     )
-                call = table.build(tc.function.name, parsed)
-                raw = executor.dispatch_tool(out, call)
-                body = _summarize_tool_result(call, raw)
+                else:
+                    try:
+                        call = table.build(tool_name, tc.function.arguments_parsed)
+                    except Exception as exc:
+                        body = _loop_tool_error_payload(
+                            "tool_build_failed",
+                            str(exc),
+                            detail=type(exc).__name__,
+                        )
+                    else:
+                        try:
+                            raw = executor.dispatch_tool(out, call)
+                            body = _summarize_tool_result(call, raw)
+                        except Exception as exc:
+                            logger.exception(
+                                "dispatch_tool failed for tool=%s", tool_name
+                            )
+                            body = _loop_tool_error_payload(
+                                "dispatch_exception",
+                                f"{type(exc).__name__}: {exc}",
+                                detail=type(exc).__name__,
+                            )
                 rows_list.append(
-                    tool_feedback_chunk(tc.id, tc.function.name, body)
+                    tool_feedback_chunk(tc.id, tool_name, body)
                 )
             continue
 

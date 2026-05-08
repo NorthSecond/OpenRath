@@ -7,6 +7,7 @@ import pytest
 from rath.backend import (
     Backend,
     CommandResult,
+    ToolExecutionFailure,
     BackendToolCommandRun,
     BackendToolFilesWrite,
 )
@@ -98,16 +99,17 @@ def test_default_cwd_is_sandbox_root(backend: Backend, python_cmd: list[str]) ->
         assert b"found" in result.stdout
 
 
-def test_timeout_raises_timeout_error(backend: Backend, python_cmd: list[str]) -> None:
+def test_timeout_returns_failure(backend: Backend, python_cmd: list[str]) -> None:
     with backend.open() as sb:
-        with pytest.raises(TimeoutError):
-            sb.dispatch(
-                BackendToolCommandRun(
-                    cmd=[
-                        *python_cmd,
-                        "-c",
-                        "import time; time.sleep(5)",
-                    ],
-                    timeout=0.5,
-                )
+        r = sb.dispatch(
+            BackendToolCommandRun(
+                cmd=[
+                    *python_cmd,
+                    "-c",
+                    "import time; time.sleep(5)",
+                ],
+                timeout=0.5,
             )
+        )
+        assert isinstance(r, ToolExecutionFailure)
+        assert r.kind == "timeout"
