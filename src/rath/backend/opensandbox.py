@@ -1,16 +1,22 @@
-"""OpenSandbox-backed runtime: remote containers via the ``opensandbox`` SDK.
+"""OpenSandbox backend: ``opensandbox`` SDK against ``opensandbox-server``.
 
-Needs optional ``opensandbox`` / ``code_interpreter`` packages and a reachable
-``opensandbox-server`` (env ``OPEN_SANDBOX_DOMAIN`` / ``OPEN_SANDBOX_API_KEY``,
-legacy ``OPENSANDBOX_DOMAIN``, or ``~/.sandbox.toml``).
+Requires optional ``opensandbox`` and ``code_interpreter``, and API reachability via
+environment (``OPEN_SANDBOX_DOMAIN``, ``OPEN_SANDBOX_API_KEY``, or legacy
+``OPENSANDBOX_DOMAIN``) or ``~/.sandbox.toml``.
 
-The SDK is async; this backend runs it on a dedicated background event loop and
-exposes **blocking** :meth:`open` / :meth:`close` / :meth:`dispatch` to callers.
+If :class:`~rath.backend.abc.BackendSandboxSpec` sets ``working_dir``,
+Rath requests a host bind of that path at ``/workspace``.
+The bind source must exist where the server runtime runs (e.g. Docker host),
+not only where Rath runs.
+
+Runs the async SDK on a dedicated thread loop and exposes blocking :meth:`open`,
+:meth:`close`, and :meth:`dispatch`.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shlex
 import stat as stat_module
@@ -50,7 +56,7 @@ try:
     from opensandbox.models.filesystem import SearchEntry
 
     _SDK_AVAILABLE = True
-except ImportError:  # pragma: no cover - exercised only when extra is missing
+except ImportError:  # pragma: no cover -- optional extra
     _SDK_AVAILABLE = False
     SandboxException = Exception  # type: ignore[assignment, misc]
 
@@ -58,15 +64,22 @@ try:
     from code_interpreter import CodeInterpreter
 
     _CI_AVAILABLE = True
-except ImportError:  # pragma: no cover - exercised only when extra is missing
+except ImportError:  # pragma: no cover -- optional extra
     _CI_AVAILABLE = False
 
 _SUPPORTED_LANGUAGES: frozenset[str] = frozenset(
     {"bash", "go", "java", "javascript", "python", "typescript"}
 )
 
+logger = logging.getLogger(__name__)
+
+_STRICT_WORKSPACE_BIND = os.environ.get(
+    "RATH_OPENSANDBOX_STRICT_WORKSPACE_BIND", ""
+).lower() in ("1", "true", "yes")
+
 if TYPE_CHECKING:
     from opensandbox import Sandbox as _OSBSandboxT
+    from opensandbox.models.sandboxes import Volume as _VolumeT
 
 
 async def _await_maybe_timeout(awaitable, timeout: float | None):
@@ -78,16 +91,120 @@ async def _await_maybe_timeout(awaitable, timeout: float | None):
         raise TimeoutError from exc
 
 
+def bind_workspace_volumes_from_spec(
+    spec: BackendSandboxSpec | None,
+    sandbox_root: str,
+) -> list["_VolumeT"] | None:
+    """Return a host-bind ``Volume`` for ``sandbox_root``, else ``None``.
+
+    Creates the directory if needed (see :class:`~rath.backend.local.LocalBackend`).
+    ``Host.path`` must be valid for binding on the server.
+    """
+
+    if not _SDK_AVAILABLE or spec is None or spec.working_dir is None:
+        return None
+    wd = Path(spec.working_dir).expanduser()
+    resolved = wd.resolve(strict=False)
+    resolved.mkdir(parents=True, exist_ok=True)
+    if not resolved.is_dir():
+        raise ValueError(
+            f"BackendSandboxSpec.working_dir={spec.working_dir!r} "
+            f"did not resolve to a directory ({resolved})"
+        )
+
+    from opensandbox.models.sandboxes import Host, Volume  # noqa: PLC0415
+
+    host_str = os.fspath(resolved)
+    # ``name`` must satisfy OpenSandbox DNS-label rules (e.g. lowercase, hyphens).
+    return [
+        Volume(
+            name="rath-workspace",
+            host=Host(path=host_str),
+            mount_path=sandbox_root,
+        )
+    ]
+
+
+def _message_indicates_workspace_bind_rejected(msg: str) -> bool:
+    """Detect create errors that imply the host-bind / volume payload was refused."""
+
+    t = (msg or "").lower()
+    if "422" in t:
+        return True
+    if "not under any allowed prefix" in t:
+        return True
+    if "host path" in t and "allowed prefix" in t:
+        return True
+    return False
+
+
+def _likely_workspace_bind_rejected(exc: BaseException) -> bool:
+    """Best-effort classification of bind/volume-related create failures."""
+
+    if _SDK_AVAILABLE:
+        try:
+            from opensandbox.exceptions import SandboxApiException
+
+            if isinstance(exc, SandboxApiException):
+                code = getattr(exc, "status_code", None)
+                if code == 422:
+                    return True
+                return _message_indicates_workspace_bind_rejected(str(exc))
+        except ImportError:  # pragma: no cover
+            pass
+    return _message_indicates_workspace_bind_rejected(str(exc))
+
+
+async def _create_sandbox_with_optional_bind_fallback(
+    image: str,
+    timeout: timedelta,
+    env: dict[str, str] | None,
+    entrypoint: list[str],
+    volumes: list | None,
+) -> tuple[object, list | None]:
+    """Create sandbox; on bind rejection, retry once with ``volumes=None``."""
+
+    try:
+        native = await _OSBSandbox.create(
+            image,
+            timeout=timeout,
+            env=env,
+            entrypoint=entrypoint,
+            volumes=volumes,
+        )
+        return native, volumes
+    except BaseException as exc:
+        if (
+            not volumes
+            or _STRICT_WORKSPACE_BIND
+            or not _likely_workspace_bind_rejected(exc)
+        ):
+            raise
+        logger.warning(
+            "OpenSandbox create rejected host bind for /workspace (%s); "
+            "retrying without volumes. Allow the host path under "
+            "[storage].allowed_host_paths, or set "
+            "RATH_OPENSANDBOX_STRICT_WORKSPACE_BIND=1 to omit this retry.",
+            exc,
+            exc_info=logger.isEnabledFor(logging.DEBUG),
+        )
+        native = await _OSBSandbox.create(
+            image,
+            timeout=timeout,
+            env=env,
+            entrypoint=entrypoint,
+            volumes=None,
+        )
+        return native, None
+
+
 @register("opensandbox")
 class OpenSandboxBackend(Backend):
-    """Map :class:`~rath.backend.tool_types.BackendTool` payloads to OpenSandbox APIs.
+    """Maps :class:`~rath.backend.tool_types.BackendTool` calls to OpenSandbox APIs.
 
-    * ``BackendToolCommandRun`` → ``commands.run`` (no stdin passthrough).
-    * File tools → ``files.read_*``, ``files.write_file``, ``files.search``, ``files.get_file_info``.
-    * ``BackendToolCodeRun`` → ``CodeInterpreter.codes.run``.
-
-    Default image/entrypoint target ``opensandbox/code-interpreter``; relative paths use
-    :attr:`_SANDBOX_ROOT` inside the container.
+    Commands, filesystem tools, and code runs use the sandbox SDK. Default image is
+    ``opensandbox/code-interpreter``. Tool paths under :attr:`_SANDBOX_ROOT` mirror
+    :attr:`BackendSandboxSpec.working_dir` when set; otherwise the workspace is empty.
     """
 
     name: ClassVar[str] = "opensandbox"
@@ -125,7 +242,10 @@ class OpenSandboxBackend(Backend):
 
     @classmethod
     def is_available(cls) -> bool:
-        """True when optional deps load and env or ``~/.sandbox.toml`` configures a server (no RPC)."""
+        """Whether dependencies import and the client appears configured.
+
+        Uses env vars or ``~/.sandbox.toml`` presence; does not ping the API.
+        """
         if not (_SDK_AVAILABLE and _CI_AVAILABLE):
             return False
         if os.environ.get("OPEN_SANDBOX_DOMAIN") or os.environ.get(
@@ -148,7 +268,7 @@ class OpenSandboxBackend(Backend):
     def open(
         self, spec: BackendSandboxSpec | None = None
     ) -> BackendSandbox:
-        if not _SDK_AVAILABLE:  # pragma: no cover - guarded by is_available
+        if not _SDK_AVAILABLE:  # pragma: no cover -- ``is_available()`` gate
             raise RuntimeError(
                 "opensandbox SDK is not installed; "
                 "install with `pip install rath[opensandbox]`"
@@ -177,13 +297,16 @@ class OpenSandboxBackend(Backend):
         entrypoint: list[str],
         spec: BackendSandboxSpec | None,
     ) -> BackendSandbox:
-        native = await _OSBSandbox.create(
+        volumes = bind_workspace_volumes_from_spec(spec, self._SANDBOX_ROOT)
+        native, effective_volumes = await _create_sandbox_with_optional_bind_fallback(
             image,
-            timeout=timeout,
-            env=env,
-            entrypoint=entrypoint,
+            timeout,
+            env,
+            entrypoint,
+            volumes,
         )
-        await native.commands.run(f"mkdir -p {shlex.quote(self._SANDBOX_ROOT)}")
+        if not effective_volumes:
+            await native.commands.run(f"mkdir -p {shlex.quote(self._SANDBOX_ROOT)}")
         self._natives[native.id] = native
         return BackendSandbox(backend=self, handle=native.id, spec=spec)
 
@@ -255,8 +378,7 @@ class OpenSandboxBackend(Backend):
                 )
 
     def _resolve(self, path: str) -> str:
-        """Resolve a tool-call path: absolute paths pass through, relative
-        paths are joined with the sandbox root."""
+        """Resolve ``path`` under :attr:`_SANDBOX_ROOT` unless already absolute."""
         if path.startswith("/"):
             return path
         if path in (".", "./"):
@@ -268,7 +390,7 @@ class OpenSandboxBackend(Backend):
     async def _command_run(
         self, native: "_OSBSandboxT", call: BackendToolCommandRun
     ) -> CommandResult:
-        """``commands.run`` has no stdin; non-``None`` ``call.stdin`` is rejected."""
+        """Run a shell command; stdin is not supported."""
         if call.stdin is not None:
             return ToolExecutionFailure(
                 kind="unsupported_tool",
@@ -370,7 +492,7 @@ class OpenSandboxBackend(Backend):
     async def _code_run(
         self, native: "_OSBSandboxT", call: BackendToolCodeRun
     ) -> CodeResult:
-        if not _CI_AVAILABLE:  # pragma: no cover - guarded by is_available
+        if not _CI_AVAILABLE:  # pragma: no cover -- ``is_available()`` gate
             return ToolExecutionFailure(
                 kind="sdk_missing",
                 message=(
@@ -399,5 +521,5 @@ class OpenSandboxBackend(Backend):
 
 
 def _join_cmd(cmd: Sequence[str]) -> str:
-    """Serialize a list-form command into a shell-safe string."""
+    """Shell-escape a argv-style command for ``commands.run``."""
     return shlex.join(cmd)
