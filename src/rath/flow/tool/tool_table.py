@@ -1,4 +1,4 @@
-"""Register tool names, json-schema parameters, and ``BackendTool`` builders."""
+"""Register tool names, JSON Schema parameters, and ``BackendTool`` builders."""
 
 from __future__ import annotations
 
@@ -13,41 +13,54 @@ from rath.flow.tool.files_write import flow_tool_files_write
 from rath.llm import RathLLMFunctionTool
 
 
+class ToolNameConflictError(ValueError):
+    """Raised when a tool name is already present in a :class:`ToolTable`."""
+
+
 @dataclass(frozen=True, slots=True)
-class _ToolSpec:
+class ToolRegistration:
+    """``name``, ``description``, ``parameters`` (JSON Schema), ``builder``."""
+
     name: str
-    description: str | None
-    parameters: Mapping[str, Any]
     builder: Callable[[Mapping[str, Any]], FlowToolCall]
+    description: str | None = None
+    parameters: Mapping[str, Any] | None = None
 
 
 class ToolTable:
-    """Maps tool name → schema + :class:`~rath.backend.tool_types.BackendTool` builder."""
+    """Maps each tool name to an OpenAI-style schema and a backend dispatch builder."""
 
     __slots__ = ("_tools", "_lock")
 
     def __init__(self) -> None:
-        self._tools: dict[str, _ToolSpec] = {}
+        self._tools: dict[str, ToolRegistration] = {}
         self._lock = Lock()
 
-    def register(
-        self,
-        name: str,
-        *,
-        builder: Callable[[Mapping[str, Any]], FlowToolCall],
-        description: str | None = None,
-        parameters: Mapping[str, Any] | None = None,
-    ) -> None:
-        """Register or replace one tool."""
-        schema = dict(parameters or {"type": "object", "properties": {}})
-        spec = _ToolSpec(
-            name=name,
-            description=description,
+    def register(self, registration: ToolRegistration) -> None:
+        """Register or replace one tool (idempotent overwrite)."""
+        self._store(registration, replace=True)
+
+    def register_unique(self, registration: ToolRegistration) -> None:
+        """Register one tool; raise :exc:`ToolNameConflictError` if the name exists."""
+
+        self._store(registration, replace=False)
+
+    def _store(self, registration: ToolRegistration, *, replace: bool) -> None:
+        schema = dict(
+            registration.parameters or {"type": "object", "properties": {}}
+        )
+        normalized = ToolRegistration(
+            name=registration.name,
+            builder=registration.builder,
+            description=registration.description,
             parameters=schema,
-            builder=builder,
         )
         with self._lock:
-            self._tools[name] = spec
+            if not replace and registration.name in self._tools:
+                raise ToolNameConflictError(
+                    f"tool {registration.name!r} is already registered"
+                )
+            self._tools[registration.name] = normalized
 
     def unregister(self, name: str) -> None:
         with self._lock:
@@ -68,10 +81,10 @@ class ToolTable:
     def build(self, name: str, arguments: Mapping[str, Any] | None) -> FlowToolCall:
         with self._lock:
             try:
-                spec = self._tools[name]
+                reg = self._tools[name]
             except KeyError as exc:
                 raise KeyError(name) from exc
-            builder = spec.builder
+            builder = reg.builder
         merged: dict[str, Any] = dict(arguments or {})
         return builder(merged)
 
@@ -82,6 +95,18 @@ _GLOBAL = ToolTable()
 def global_tool_table() -> ToolTable:
     """Singleton used by :func:`run_session_loop` unless a table is injected."""
     return _GLOBAL
+
+
+def register_global_tool(registration: ToolRegistration) -> None:
+    """Register ``registration`` on the process-wide table if the name is unused.
+
+    This is a convenience for :func:`global_tool_table` plus
+    :meth:`ToolTable.register_unique`.
+
+    Raises:
+        ToolNameConflictError: If ``registration.name`` is already registered.
+    """
+    global_tool_table().register_unique(registration)
 
 
 def register_builtin_session_tools(table: ToolTable | None = None) -> ToolTable:
@@ -100,20 +125,25 @@ def register_builtin_session_tools(table: ToolTable | None = None) -> ToolTable:
         return flow_tool_command_run(cmd=cmd)
 
     target.register(
-        "run_shell_command",
-        builder=_shell_cmd,
-        description=(
-            "Run one shell command inside the active sandbox workspace. "
-            "Prefer short commands such as ``echo Hello``."
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "cmd": {"type": "string", "description": "Shell command string"},
+        ToolRegistration(
+            name="run_shell_command",
+            builder=_shell_cmd,
+            description=(
+                "Run one shell command inside the active sandbox workspace. "
+                "Prefer short commands such as ``echo Hello``."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "cmd": {
+                        "type": "string",
+                        "description": "Shell command string",
+                    },
+                },
+                "required": ["cmd"],
+                "additionalProperties": False,
             },
-            "required": ["cmd"],
-            "additionalProperties": False,
-        },
+        )
     )
 
     def _write_file(args: Mapping[str, Any]) -> FlowToolCall:
@@ -124,21 +154,32 @@ def register_builtin_session_tools(table: ToolTable | None = None) -> ToolTable:
         raise TypeError("content must be text for write_workspace_file")
 
     target.register(
-        "write_workspace_file",
-        builder=_write_file,
-        description="Write UTF-8 text to a path inside the sandbox workspace.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "content": {"type": "string"},
+        ToolRegistration(
+            name="write_workspace_file",
+            builder=_write_file,
+            description=(
+                "Write UTF-8 text to a path inside the sandbox workspace."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
             },
-            "required": ["path", "content"],
-            "additionalProperties": False,
-        },
+        )
     )
 
     return target
 
 
-__all__ = ["ToolTable", "global_tool_table", "register_builtin_session_tools"]
+__all__ = [
+    "ToolNameConflictError",
+    "ToolRegistration",
+    "ToolTable",
+    "global_tool_table",
+    "register_global_tool",
+    "register_builtin_session_tools",
+]

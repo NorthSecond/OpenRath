@@ -1,4 +1,8 @@
-"""Tool payload factories and registration (:class:`~rath.flow.tool.base.FlowToolCall` is alias of :class:`~rath.backend.tool_types.BackendTool`)."""
+"""Tool payloads, factories, and registration.
+
+:class:`~rath.flow.tool.base.FlowToolCall` aliases
+:class:`~rath.backend.tool_types.BackendTool`.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +22,14 @@ from rath.flow.tool.files_exists import flow_tool_files_exists
 from rath.flow.tool.files_list import flow_tool_files_list
 from rath.flow.tool.files_read import flow_tool_files_read
 from rath.flow.tool.files_write import flow_tool_files_write
-from rath.flow.tool.tool_table import ToolTable, global_tool_table, register_builtin_session_tools
+from rath.flow.tool.tool_table import (
+    ToolNameConflictError,
+    ToolRegistration,
+    ToolTable,
+    global_tool_table,
+    register_builtin_session_tools,
+    register_global_tool,
+)
 
 __all__ = [
     "BackendTool",
@@ -29,6 +40,8 @@ __all__ = [
     "BackendToolFilesRead",
     "BackendToolFilesWrite",
     "FlowToolCall",
+    "ToolNameConflictError",
+    "ToolRegistration",
     "ToolTable",
     "flow_tool_code_run",
     "flow_tool_command_run",
@@ -38,4 +51,5 @@ __all__ = [
     "flow_tool_files_write",
     "global_tool_table",
     "register_builtin_session_tools",
+    "register_global_tool",
 ]

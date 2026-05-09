@@ -26,10 +26,25 @@ def _message_as_openai_dict(message: RathLLMMessage) -> dict[str, Any]:
     return d
 
 
+def _drop_additional_properties(obj: Any) -> Any:
+    """Recursively drop ``additionalProperties`` keys from nested dict/list schema."""
+
+    if isinstance(obj, dict):
+        return {
+            k: _drop_additional_properties(v)
+            for k, v in obj.items()
+            if k != "additionalProperties"
+        }
+    if isinstance(obj, list):
+        return [_drop_additional_properties(x) for x in obj]
+    return obj
+
+
 def _function_tool_as_openai_dict(tool: RathLLMFunctionTool) -> dict[str, Any]:
+    params = _drop_additional_properties(dict(tool.parameters))
     fn: dict[str, Any] = {
         "name": tool.name,
-        "parameters": tool.parameters,
+        "parameters": params,
     }
     if tool.description is not None:
         fn["description"] = tool.description
@@ -43,10 +58,11 @@ def to_create_kwargs(
     *,
     default_model: str | None,
 ) -> dict[str, Any]:
-    """Translate :class:`RathLLMChatRequest` into SDK kwargs (non-streaming).
+    """Map :class:`RathLLMChatRequest` to ``OpenAI.chat.completions.create`` kwargs.
 
-    ``stream`` is set to ``False`` after merging ``extra_create_args``.
-    ``stream=True`` in extras raises ``ValueError``.
+    Non-streaming only: ``stream`` is forced to ``False`` after
+    ``extra_create_args`` are merged. ``stream=True`` in extras raises
+    ``ValueError``.
     """
     model = req.model or default_model
     if not model:
@@ -107,7 +123,8 @@ def to_create_kwargs(
     extra = dict(req.extra_create_args)
     if extra.pop("stream", None) is True:
         raise ValueError(
-            "stream=True is not supported (only non-streaming completions are implemented)",
+            "stream=True is not supported (only non-streaming completions "
+            "are implemented)",
         )
     out.update(extra)
     out["stream"] = False
