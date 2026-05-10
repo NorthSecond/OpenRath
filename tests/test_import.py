@@ -42,8 +42,11 @@ def test_import_session_and_flow_modules() -> None:
         DefaultSessionLoopExecutor,
         Session,
         SessionLoopExecutor,
+        run_session_compress,
         run_session_loop,
     )
+
+    assert run_session_compress.__name__ == "run_session_compress"
 
     assert AgentParam.__name__ == "AgentParam"
     assert Provider.__name__ == "Provider"

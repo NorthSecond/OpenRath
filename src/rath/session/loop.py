@@ -25,12 +25,12 @@ from rath.flow.tool import (
 )
 from rath.llm import (
     Provider,
-    RathLLMChatRequest,
     RathLLMChatResponse,
     RathLLMFunctionTool,
     RathLLMMessage,
     RathOpenAIChatClient,
 )
+from rath.session.chat_request_build import provider_into_chat_request
 from rath.session.provider_builtin import DefaultSessionLoopExecutor
 from rath.session.chunk import (
     ChunkTable,
@@ -61,46 +61,6 @@ class SessionLoopExecutor(Protocol):
 
     def tool_schemas(self) -> tuple[RathLLMFunctionTool, ...]:
         """Tool specs for OpenAI-style ``tools``. Empty means use the loop-local merged table."""
-
-
-def _chat_request_from_loop(
-    messages: tuple[RathLLMMessage, ...],
-    tools: tuple[RathLLMFunctionTool, ...] | None,
-    prefs: Provider,
-    *,
-    default_tool_choice: Any,
-) -> RathLLMChatRequest:
-    """Fold :class:`~rath.llm.Provider` into a concrete request."""
-
-    return RathLLMChatRequest(
-        messages=messages,
-        tools=tools,
-        tool_choice=prefs.tool_choice
-        if prefs.tool_choice is not None
-        else default_tool_choice,
-        parallel_tool_calls=prefs.parallel_tool_calls,
-        model=prefs.model,
-        temperature=prefs.temperature,
-        top_p=prefs.top_p,
-        max_completion_tokens=prefs.max_completion_tokens,
-        max_tokens=prefs.max_tokens,
-        stop=prefs.stop,
-        n=prefs.n,
-        seed=prefs.seed,
-        frequency_penalty=prefs.frequency_penalty,
-        presence_penalty=prefs.presence_penalty,
-        response_format=prefs.response_format,
-        logit_bias=prefs.logit_bias,
-        logprobs=prefs.logprobs,
-        top_logprobs=prefs.top_logprobs,
-        reasoning_effort=prefs.reasoning_effort,
-        verbosity=prefs.verbosity,
-        metadata=prefs.metadata,
-        user=prefs.user,
-        store=prefs.store,
-        service_tier=prefs.service_tier,
-        extra_create_args=prefs.extra_create_args,
-    )
 
 
 def _loop_tool_error_payload(
@@ -260,7 +220,7 @@ def run_session_loop(
         tail = chunk_table_to_messages(ChunkTable(rows=tuple(rows_list)))
         messages = head + tail
 
-        req = _chat_request_from_loop(
+        req = provider_into_chat_request(
             messages,
             tool_schemas,
             prefs,

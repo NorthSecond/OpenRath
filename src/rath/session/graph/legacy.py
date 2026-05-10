@@ -11,7 +11,8 @@ class SessionLineage:
     """Loop output lineage: ties ``out`` to producer user vs agent-system sessions.
 
     ``producer_system_session_id`` aligns with ``agent_session.id`` passed to
-    :func:`~rath.session.loop.run_session_loop`.
+    :func:`~rath.session.loop.run_session_loop` or
+    :func:`~rath.session.compress.run_session_compress`.
     """
 
     producer_user_session_id: UUID

@@ -27,6 +27,7 @@ from rath.session.graph import (
     validate_acyclic,
 )
 from rath.session.manager import SessionRegistry, session_registry
+from rath.session.compress import run_session_compress
 from rath.session.loop import SessionLoopExecutor, run_session_loop
 from rath.session.primitives import (
     create_leaf_system,
@@ -67,6 +68,7 @@ __all__ = [
     "SessionLineage",
     "SessionLoopExecutor",
     "SessionRegistry",
+    "run_session_compress",
     "run_session_loop",
     "session_registry",
     "system_text_chunk",

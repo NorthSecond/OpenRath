@@ -16,6 +16,7 @@ class LineageKind(str, Enum):
     OP_FORK = "op_fork"
     OP_DETACH = "op_detach"
     OP_MERGE = "op_merge"
+    OP_SESSION_COMPRESS = "op_session_compress"
 
 
 class LineageConsistencyError(ValueError):
