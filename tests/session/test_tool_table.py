@@ -6,19 +6,20 @@ import pytest
 
 from rath.backend import BackendToolCommandRun, BackendToolFilesWrite
 from rath.flow.tool import FlowToolCall, flow_tool_command_run
+from rath.flow.tool._builtins import extend_builtin_sandbox_tools
 from rath.flow.tool.tool_table import (
     ToolNameConflictError,
     ToolRegistration,
     ToolTable,
+    build_loop_tool_table,
     global_tool_table,
-    register_builtin_session_tools,
     register_global_tool,
 )
 
 
 def test_register_builtin_includes_expected_tools() -> None:
     table = ToolTable()
-    register_builtin_session_tools(table)
+    extend_builtin_sandbox_tools(table)
     names = {s.name for s in table.schemas()}
     assert "run_shell_command" in names
     assert "write_workspace_file" in names
@@ -26,7 +27,7 @@ def test_register_builtin_includes_expected_tools() -> None:
 
 def test_build_run_shell_command() -> None:
     table = ToolTable()
-    register_builtin_session_tools(table)
+    extend_builtin_sandbox_tools(table)
     call = table.build("run_shell_command", {"cmd": "echo x"})
     assert isinstance(call, BackendToolCommandRun)
     assert call.cmd == "echo x"
@@ -34,7 +35,7 @@ def test_build_run_shell_command() -> None:
 
 def test_build_write_workspace_file() -> None:
     table = ToolTable()
-    register_builtin_session_tools(table)
+    extend_builtin_sandbox_tools(table)
     call = table.build(
         "write_workspace_file",
         {"path": "rel.txt", "content": "body"},
@@ -46,14 +47,14 @@ def test_build_write_workspace_file() -> None:
 
 def test_reject_multiline_shell_command() -> None:
     table = ToolTable()
-    register_builtin_session_tools(table)
+    extend_builtin_sandbox_tools(table)
     with pytest.raises(ValueError, match="multiline"):
         table.build("run_shell_command", {"cmd": "echo\nbad"})
 
 
 def test_reject_oversized_shell_command() -> None:
     table = ToolTable()
-    register_builtin_session_tools(table)
+    extend_builtin_sandbox_tools(table)
     with pytest.raises(ValueError, match="too long"):
         table.build("run_shell_command", {"cmd": "x" * 3000})
 
@@ -133,3 +134,37 @@ def test_register_global_tool_and_conflict() -> None:
             )
     finally:
         g.unregister(name)
+
+
+def test_build_loop_tool_table_includes_system_and_selected_user_tools() -> None:
+    name = "_rath_loop_merge_probe"
+    u = global_tool_table()
+    u.unregister(name)
+    try:
+
+        def _b(_args: dict[str, object]) -> FlowToolCall:
+            return flow_tool_command_run(cmd="echo b")
+
+        register_global_tool(
+            ToolRegistration(
+                name=name,
+                builder=_b,
+                description="b",
+                parameters={"type": "object", "properties": {}},
+            )
+        )
+        loop = build_loop_tool_table([name])
+        schema_names = {s.name for s in loop.schemas()}
+        assert "run_shell_command" in schema_names
+        assert name in schema_names
+
+        loop_sys_only = build_loop_tool_table([])
+        assert name not in {s.name for s in loop_sys_only.schemas()}
+        assert "run_shell_command" in {s.name for s in loop_sys_only.schemas()}
+    finally:
+        u.unregister(name)
+
+
+def test_build_loop_tool_table_unknown_user_tool_raises() -> None:
+    with pytest.raises(KeyError, match="unknown tool name"):
+        build_loop_tool_table(["__no_such_tool_rath__"])

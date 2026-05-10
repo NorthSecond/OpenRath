@@ -6,6 +6,8 @@ import json
 import logging
 from typing import Any, Protocol, runtime_checkable
 
+from pydantic import BaseModel
+
 from rath.backend import (
     CodeResult,
     CommandResult,
@@ -17,9 +19,9 @@ from rath.backend import (
 )
 from rath.flow.tool import (
     FlowToolCall,
-    ToolTable,
-    global_tool_table,
-    register_builtin_session_tools,
+    InlineToolResolution,
+    SandboxToolResolution,
+    build_loop_tool_table,
 )
 from rath.llm import (
     Provider,
@@ -58,7 +60,7 @@ class SessionLoopExecutor(Protocol):
         """Execute ``call`` on the session sandbox."""
 
     def tool_schemas(self) -> tuple[RathLLMFunctionTool, ...]:
-        """Function tool definitions for OpenAI-style ``tools`` in requests."""
+        """Tool specs for OpenAI-style ``tools``. Empty means use the loop-local merged table."""
 
 
 def _chat_request_from_loop(
@@ -114,6 +116,22 @@ def _loop_tool_error_payload(
     if detail:
         payload["detail"] = detail[:4000]
     return json.dumps(payload)
+
+
+def _summarize_inline_result(obj: Any) -> str:
+    """JSON text for ``@tool`` return values."""
+
+    try:
+        if isinstance(obj, BaseModel):
+            payload: Any = obj.model_dump(mode="json")
+        else:
+            payload = obj
+        text = json.dumps(payload, ensure_ascii=False, default=str)
+        if len(text) > 48_000:
+            text = text[:48_000] + "...(truncated)"
+        return text
+    except TypeError:
+        return json.dumps({"repr": repr(obj), "type": type(obj).__name__})
 
 
 def _summarize_tool_result(_call: FlowToolCall, raw: ToolResult | bool) -> str:
@@ -174,19 +192,26 @@ def run_session_loop(
     agent_session: Session,
     *,
     agent_provider: Provider,
+    tools: list[str] | None = None,
     executor: SessionLoopExecutor | None = None,
-    tool_table: ToolTable | None = None,
     max_tool_rounds: int = 16,
 ) -> Session:
     """Run one multi-turn assistant pass with optional tool rounds.
 
+    Built-in sandbox tools come from :func:`~rath.flow.tool.global_system_tool_table`;
+    ``tools`` lists names from :func:`~rath.flow.tool.global_user_tool_table` merged into
+    the loop-scoped tool table for this call.
+
     Rebases ``BackendSandbox`` from ``user_session`` onto the returned session.
     LLM routing/sampling kwargs come from ``agent_provider``
-    (:class:`~rath.llm.Provider`); completions and tool dispatch go through ``executor``.
-    When ``executor`` is omitted, builds a fresh
+    (:class:`~rath.llm.Provider`); completions and sandbox tool dispatch go through
+    ``executor``. When ``executor`` is omitted, builds a fresh
     :class:`~rath.session.provider_builtin.DefaultSessionLoopExecutor`
     wrapping :class:`~rath.llm.client.RathOpenAIChatClient()` (``.env`` / env-based
-    API settings) sharing the resolved ``tool_table``.
+    API settings).
+
+    Inline tools registered via :func:`~rath.flow.tool.tool` execute **in-process**
+    inside this loop (not on the sandbox backend).
 
     Message assembly concatenates ``agent_session.chunk_table`` ahead of user rows for
     the LLM; head rows stay out of ``out.chunk_table`` (assistant + tool-result only).
@@ -195,18 +220,14 @@ def run_session_loop(
     legacy :class:`~rath.session.graph.SessionLineage`.
     """
 
-    table = tool_table or global_tool_table()
-    register_builtin_session_tools(table)
+    table = build_loop_tool_table(tools)
 
     if executor is None:
-        executor = DefaultSessionLoopExecutor(
-            RathOpenAIChatClient(),
-            tool_table=table,
-        )
+        executor = DefaultSessionLoopExecutor(RathOpenAIChatClient())
 
     prefs = agent_provider
 
-    rows_list: list = list(user_session.chunk_table.rows)
+    rows_list: list[Any] = list(user_session.chunk_table.rows)
     sb = user_session.take_sandbox()
     out = Session(
         chunk_table=ChunkTable(rows=tuple(rows_list)),
@@ -273,23 +294,29 @@ def run_session_loop(
                     )
                 else:
                     try:
-                        call = table.build(tool_name, tc.function.arguments_parsed)
+                        resolved = table.resolve(
+                            tool_name, tc.function.arguments_parsed
+                        )
                     except Exception as exc:
                         body = _loop_tool_error_payload(
-                            "tool_build_failed",
+                            "tool_resolve_failed",
                             str(exc),
                             detail=type(exc).__name__,
                         )
                     else:
                         try:
-                            raw = executor.dispatch_tool(out, call)
-                            body = _summarize_tool_result(call, raw)
+                            if isinstance(resolved, SandboxToolResolution):
+                                raw = executor.dispatch_tool(out, resolved.call)
+                                body = _summarize_tool_result(resolved.call, raw)
+                            elif isinstance(resolved, InlineToolResolution):
+                                result = resolved.fn(**resolved.kwargs)
+                                body = _summarize_inline_result(result)
                         except Exception as exc:
                             logger.exception(
-                                "dispatch_tool failed for tool=%s", tool_name
+                                "tool invocation failed for tool=%s", tool_name
                             )
                             body = _loop_tool_error_payload(
-                                "dispatch_exception",
+                                "tool_execution_exception",
                                 f"{type(exc).__name__}: {exc}",
                                 detail=type(exc).__name__,
                             )

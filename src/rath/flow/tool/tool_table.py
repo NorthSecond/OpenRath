@@ -1,15 +1,15 @@
-"""Register tool names, JSON Schema parameters, and ``BackendTool`` builders."""
+"""Register tool names, JSON schemas, sandbox builders, or inline ``@tool`` callables."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
+from pydantic import BaseModel, ValidationError
+
 from rath.flow.tool.base import FlowToolCall
-from rath.flow.tool.command_run import flow_tool_command_run
-from rath.flow.tool.files_write import flow_tool_files_write
 from rath.llm import RathLLMFunctionTool
 
 
@@ -18,17 +18,44 @@ class ToolNameConflictError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class SandboxToolResolution:
+    """Resolved sandbox dispatch payload."""
+
+    call: FlowToolCall
+
+
+@dataclass(frozen=True, slots=True)
+class InlineToolResolution:
+    """Resolved in-process :func:`tool` invocation."""
+
+    fn: Callable[..., Any]
+    kwargs: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class ToolRegistration:
-    """``name``, ``description``, ``parameters`` (JSON Schema), ``builder``."""
+    """Exactly one of ``builder`` (sandbox) or ``inline_fn`` (``@tool``) must be set."""
 
     name: str
-    builder: Callable[[Mapping[str, Any]], FlowToolCall]
     description: str | None = None
     parameters: Mapping[str, Any] | None = None
+    builder: Callable[[Mapping[str, Any]], FlowToolCall] | None = None
+    inline_fn: Callable[..., Any] | None = None
+    args_schema: type[BaseModel] | None = None
+
+    def __post_init__(self) -> None:
+        sb = self.builder is not None
+        inl = self.inline_fn is not None
+        if sb == inl:
+            raise ValueError(
+                "ToolRegistration requires exactly one of builder or inline_fn"
+            )
+        if inl and self.args_schema is None:
+            raise ValueError("inline_fn requires args_schema")
 
 
 class ToolTable:
-    """Maps each tool name to an OpenAI-style schema and a backend dispatch builder."""
+    """Maps tool names to OpenAI-style schemas plus sandbox or inline handlers."""
 
     __slots__ = ("_tools", "_lock")
 
@@ -51,9 +78,11 @@ class ToolTable:
         )
         normalized = ToolRegistration(
             name=registration.name,
-            builder=registration.builder,
             description=registration.description,
             parameters=schema,
+            builder=registration.builder,
+            inline_fn=registration.inline_fn,
+            args_schema=registration.args_schema,
         )
         with self._lock:
             if not replace and registration.name in self._tools:
@@ -73,113 +102,136 @@ class ToolTable:
             RathLLMFunctionTool(
                 name=s.name,
                 description=s.description,
-                parameters=dict(s.parameters),
+            parameters=dict(s.parameters or {}),
             )
             for s in specs
         )
 
-    def build(self, name: str, arguments: Mapping[str, Any] | None) -> FlowToolCall:
+    def resolve(
+        self, name: str, arguments: Mapping[str, Any] | None
+    ) -> SandboxToolResolution | InlineToolResolution:
+        """Validate arguments and return either a sandbox call or inline kwargs."""
+
         with self._lock:
             try:
                 reg = self._tools[name]
             except KeyError as exc:
                 raise KeyError(name) from exc
             builder = reg.builder
+            inline_fn = reg.inline_fn
+            args_schema = reg.args_schema
+
         merged: dict[str, Any] = dict(arguments or {})
-        return builder(merged)
+        if builder is not None:
+            return SandboxToolResolution(call=builder(merged))
+        assert inline_fn is not None and args_schema is not None
+        try:
+            model = args_schema.model_validate(merged)
+        except ValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        kwargs = model.model_dump()
+        return InlineToolResolution(fn=inline_fn, kwargs=kwargs)
+
+    def build(self, name: str, arguments: Mapping[str, Any] | None) -> FlowToolCall:
+        """Resolve a sandbox tool only; inline tools raise :exc:`TypeError`."""
+
+        resolved = self.resolve(name, arguments)
+        if isinstance(resolved, SandboxToolResolution):
+            return resolved.call
+        raise TypeError(
+            f"tool {name!r} is inline-only (@tool); sandbox build() is not supported"
+        )
+
+    def copy_all_from(self, source: ToolTable) -> None:
+        """Copy every registration from ``source`` into this table (later wins on name clash)."""
+
+        with source._lock:
+            regs = list(source._tools.values())
+        for reg in regs:
+            self.register(reg)
+
+    def copy_named_from(self, source: ToolTable, names: Sequence[str]) -> None:
+        """Copy registrations for ``names`` from ``source``; raises :exc:`KeyError` if any name is missing."""
+
+        with source._lock:
+            missing = [n for n in names if n not in source._tools]
+            if missing:
+                raise KeyError(f"unknown tool name(s): {missing}")
+            regs = [source._tools[n] for n in names]
+        for reg in regs:
+            self.register(reg)
 
 
-_GLOBAL = ToolTable()
+_SYSTEM_GLOBAL = ToolTable()
+_USER_GLOBAL = ToolTable()
+_builtin_install_lock = Lock()
+_builtin_installed_flag = False
+
+
+def _ensure_builtins_on_system() -> None:
+    """Populate default sandbox tools on the system table once."""
+
+    global _builtin_installed_flag
+    if _builtin_installed_flag:
+        return
+    with _builtin_install_lock:
+        if _builtin_installed_flag:
+            return
+        from rath.flow.tool._builtins import extend_builtin_sandbox_tools
+
+        extend_builtin_sandbox_tools(_SYSTEM_GLOBAL)
+        _builtin_installed_flag = True
+
+
+def global_system_tool_table() -> ToolTable:
+    """Process-wide table for built-in (sandbox) tools, seeded on first access."""
+
+    _ensure_builtins_on_system()
+    return _SYSTEM_GLOBAL
+
+
+def global_user_tool_table() -> ToolTable:
+    """Process-wide table for :func:`~rath.flow.tool.decorators.tool` and :func:`register_global_tool`."""
+
+    return _USER_GLOBAL
 
 
 def global_tool_table() -> ToolTable:
-    """Singleton used by :func:`run_session_loop` unless a table is injected."""
-    return _GLOBAL
+    """Backward-compatible alias for :func:`global_user_tool_table`."""
+
+    return global_user_tool_table()
+
+
+def build_loop_tool_table(user_tool_names: list[str] | None = None) -> ToolTable:
+    """System tools plus the named subset of user tools for one :func:`~rath.session.loop.run_session_loop` run."""
+
+    loop = ToolTable()
+    loop.copy_all_from(global_system_tool_table())
+    names = list(user_tool_names or ())
+    if names:
+        loop.copy_named_from(global_user_tool_table(), names)
+    return loop
 
 
 def register_global_tool(registration: ToolRegistration) -> None:
-    """Register ``registration`` on the process-wide table if the name is unused.
-
-    This is a convenience for :func:`global_tool_table` plus
-    :meth:`ToolTable.register_unique`.
+    """Register ``registration`` on :func:`global_user_tool_table` if the name is unused.
 
     Raises:
         ToolNameConflictError: If ``registration.name`` is already registered.
     """
-    global_tool_table().register_unique(registration)
 
-
-def register_builtin_session_tools(table: ToolTable | None = None) -> ToolTable:
-    """Register defaults for sandbox session loops (shell + workspace write)."""
-
-    target = table if table is not None else _GLOBAL
-
-    def _shell_cmd(args: Mapping[str, Any]) -> FlowToolCall:
-        cmd = args["cmd"]
-        if not isinstance(cmd, str):
-            cmd = str(cmd)
-        if "\n" in cmd or "\r" in cmd:
-            raise ValueError("multiline commands are rejected")
-        if len(cmd) > 2048:
-            raise ValueError("command too long")
-        return flow_tool_command_run(cmd=cmd)
-
-    target.register(
-        ToolRegistration(
-            name="run_shell_command",
-            builder=_shell_cmd,
-            description=(
-                "Run one shell command inside the active sandbox workspace. "
-                "Prefer short commands such as ``echo Hello``."
-            ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "cmd": {
-                        "type": "string",
-                        "description": "Shell command string",
-                    },
-                },
-                "required": ["cmd"],
-                "additionalProperties": False,
-            },
-        )
-    )
-
-    def _write_file(args: Mapping[str, Any]) -> FlowToolCall:
-        path = str(args["path"])
-        raw = args["content"]
-        if isinstance(raw, str):
-            return flow_tool_files_write(path=path, data=raw)
-        raise TypeError("content must be text for write_workspace_file")
-
-    target.register(
-        ToolRegistration(
-            name="write_workspace_file",
-            builder=_write_file,
-            description=(
-                "Write UTF-8 text to a path inside the sandbox workspace."
-            ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "content": {"type": "string"},
-                },
-                "required": ["path", "content"],
-                "additionalProperties": False,
-            },
-        )
-    )
-
-    return target
+    global_user_tool_table().register_unique(registration)
 
 
 __all__ = [
+    "InlineToolResolution",
+    "SandboxToolResolution",
     "ToolNameConflictError",
     "ToolRegistration",
     "ToolTable",
+    "build_loop_tool_table",
+    "global_system_tool_table",
     "global_tool_table",
+    "global_user_tool_table",
     "register_global_tool",
-    "register_builtin_session_tools",
 ]

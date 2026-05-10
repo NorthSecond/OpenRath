@@ -181,7 +181,7 @@ def test_unknown_tool_name_surfaces_in_tool_chunk() -> None:
     assert len(tool_rows) >= 1
     payload = json.loads(tool_rows[0].payload["content"])
     assert payload.get("ok") is False
-    assert payload.get("error_kind") == "tool_build_failed"
+    assert payload.get("error_kind") == "tool_resolve_failed"
 
 
 def test_max_tool_rounds_caps_iterations_without_final_stop() -> None:
@@ -334,5 +334,5 @@ def test_dispatch_exception_surfaces_in_tool_chunk() -> None:
     assert len(tool_rows) == 1
     payload = json.loads(tool_rows[0].payload["content"])
     assert payload.get("ok") is False
-    assert payload.get("error_kind") == "dispatch_exception"
+    assert payload.get("error_kind") == "tool_execution_exception"
     assert "RuntimeError" in payload.get("message", "")

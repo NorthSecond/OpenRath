@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from rath.flow.agent import Agent
-from rath.flow.tool import ToolTable
 from rath.session.loop import SessionLoopExecutor, run_session_loop
 from rath.session.session import Session
 
@@ -76,8 +75,8 @@ def run_session_loop_from_agent(
     user_session: Session,
     agent: Agent,
     *,
+    tools: list[str] | None = None,
     executor: SessionLoopExecutor | None = None,
-    tool_table: ToolTable | None = None,
     max_tool_rounds: int = 16,
 ) -> Session:
     """Maps ``Agent`` fields to ``run_session_loop`` keyword arguments.
@@ -88,8 +87,8 @@ def run_session_loop_from_agent(
         user_session,
         agent.agent_session,
         agent_provider=agent.provider,
+        tools=tools,
         executor=executor,
-        tool_table=tool_table,
         max_tool_rounds=max_tool_rounds,
     )
 

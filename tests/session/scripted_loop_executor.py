@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from rath.backend import ToolResult
-from rath.flow.tool import FlowToolCall, register_builtin_session_tools
-from rath.flow.tool.tool_table import global_tool_table
+from rath.flow.tool import FlowToolCall
 from rath.llm import RathLLMChatRequest, RathLLMChatResponse, RathLLMFunctionTool
 from rath.session.session import Session
 
@@ -16,7 +15,6 @@ class ScriptedSessionLoopExecutor:
 
     def __init__(self, responses: list[RathLLMChatResponse]) -> None:
         self._queue = list(responses)
-        register_builtin_session_tools()
 
     def complete(self, req: RathLLMChatRequest) -> RathLLMChatResponse:
         if not self._queue:
@@ -31,4 +29,4 @@ class ScriptedSessionLoopExecutor:
         return session.require_sandbox().dispatch(call)
 
     def tool_schemas(self) -> tuple[RathLLMFunctionTool, ...]:
-        return global_tool_table().schemas()
+        return ()
