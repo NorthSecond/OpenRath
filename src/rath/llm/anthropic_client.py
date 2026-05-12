@@ -24,11 +24,24 @@ from rath.llm.chat_response import RathLLMChatResponse
 from rath.llm.provider import Provider
 
 try:
-    from anthropic import Anthropic  # type: ignore[import-not-found, unused-ignore]
+    from anthropic import (  # type: ignore[import-not-found, unused-ignore]
+        Anthropic,
+        APIConnectionError as _AnthropicAPIConnectionError,
+        APITimeoutError as _AnthropicAPITimeoutError,
+        InternalServerError as _AnthropicInternalServerError,
+        RateLimitError as _AnthropicRateLimitError,
+    )
 
     _ANTHROPIC_AVAILABLE = True
+    _ANTHROPIC_RETRYABLE: tuple[type[BaseException], ...] = (
+        _AnthropicRateLimitError,
+        _AnthropicAPIConnectionError,
+        _AnthropicAPITimeoutError,
+        _AnthropicInternalServerError,
+    )
 except ImportError:  # pragma: no cover -- optional extra
     _ANTHROPIC_AVAILABLE = False
+    _ANTHROPIC_RETRYABLE = ()
 
 
 __all__ = ["RathAnthropicChatClient", "is_anthropic_available"]
@@ -72,12 +85,11 @@ class RathAnthropicChatClient:
         """Run ``messages.create`` and normalize the response.
 
         Transient errors are retried per :attr:`Provider.retry_max_attempts` /
-        :attr:`Provider.retry_base_seconds`; the retry helper imports OpenAI
-        exception types, but Anthropic raises ``anthropic.APIError`` etc.
-        subclasses, so this client adds its own try-block on a best-effort
-        basis. (Full Anthropic-aware retry classification is left as a
-        follow-up; today's behavior is "retry on anything we recognize as
-        transient via duck-typing".)
+        :attr:`Provider.retry_base_seconds`. The retry helper recognises
+        OpenAI's exception classes by default; this client widens the
+        retryable set via ``extra_retryable=`` to include the matching
+        ``anthropic.*`` siblings (``RateLimitError``, ``APIConnectionError``,
+        ``APITimeoutError``, ``InternalServerError``).
         """
         default_model = (
             self._provider.model or os.environ.get("ANTHROPIC_DEFAULT_MODEL")
@@ -93,4 +105,5 @@ class RathAnthropicChatClient:
             _call,
             max_attempts=self._provider.retry_max_attempts,
             base_seconds=self._provider.retry_base_seconds,
+            extra_retryable=_ANTHROPIC_RETRYABLE,
         )
