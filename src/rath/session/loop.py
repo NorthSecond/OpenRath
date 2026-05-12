@@ -30,6 +30,7 @@ from rath.llm import (
     RathLLMChatResponse,
     RathLLMFunctionTool,
     RathOpenAIChatClient,
+    add_usage,
 )
 from rath.session.chat_request_build import provider_into_chat_request
 from rath.session.provider_builtin import DefaultSessionLoopExecutor
@@ -102,6 +103,39 @@ def _notify_chunk_append(
 
 def _sync_loop_out_rows(out: Session, rows_list: list[Any]) -> None:
     out.chunk_table = ChunkTable(rows=tuple(rows_list))
+
+
+def _accumulate_usage_and_check_budget(
+    out: Session,
+    resp: RathLLMChatResponse,
+    provider: Provider,
+) -> None:
+    """Fold ``resp.usage`` into ``out.cumulative_usage`` and trip the budget guard.
+
+    If ``provider.budget_total_tokens`` is set and the running total crosses it,
+    call ``provider.on_budget_exceeded(out, out.cumulative_usage)``; if no
+    callback is set, log a warning. The callback may raise
+    :class:`~rath.llm.BudgetExceededError` to abort the loop.
+    """
+    if resp.usage is None:
+        return
+    out.cumulative_usage = add_usage(out.cumulative_usage, resp.usage)
+    cap = provider.budget_total_tokens
+    if cap is None or out.cumulative_usage is None:
+        return
+    if out.cumulative_usage.total_tokens <= cap:
+        return
+    callback = provider.on_budget_exceeded
+    if callback is None:
+        logger.warning(
+            "session %s exceeded budget_total_tokens=%d "
+            "(cumulative=%d); no callback configured",
+            out.id,
+            cap,
+            out.cumulative_usage.total_tokens,
+        )
+        return
+    callback(out, out.cumulative_usage)
 
 
 @runtime_checkable
@@ -298,6 +332,7 @@ def run_session_loop(
             default_tool_choice="auto",
         )
         resp = executor.complete(req)
+        _accumulate_usage_and_check_budget(out, resp, prefs)
         choice = resp.primary_choice
         msg = choice.message
         tcalls = msg.tool_calls

@@ -7,6 +7,7 @@ from typing import Any
 
 from openai import AzureOpenAI, OpenAI
 
+from rath.llm._retry import retry_with_backoff
 from rath.llm.openai_create_kwargs import to_create_kwargs
 from rath.llm.openai_normalize import normalize_chat_completion
 from rath.llm.chat_request import RathLLMChatRequest
@@ -112,7 +113,23 @@ class RathOpenAIChatClient:
         return self._provider
 
     def complete(self, req: RathLLMChatRequest) -> RathLLMChatResponse:
-        """Run ``chat.completions.create`` and normalize the response."""
-        kwargs = to_create_kwargs(req, default_model=self._provider.model)
-        completion = self._client.chat.completions.create(**kwargs)
-        return normalize_chat_completion(completion)
+        """Run ``chat.completions.create`` and normalize the response.
+
+        Transient errors (rate limit, connection, timeout, server 5xx) are
+        retried with exponential backoff per :attr:`Provider.retry_max_attempts`
+        and :attr:`Provider.retry_base_seconds`.
+        """
+        default_model = (
+            self._provider.model or os.environ.get("OPENAI_DEFAULT_MODEL")
+        )
+        kwargs = to_create_kwargs(req, default_model=default_model)
+
+        def _call() -> RathLLMChatResponse:
+            completion = self._client.chat.completions.create(**kwargs)
+            return normalize_chat_completion(completion)
+
+        return retry_with_backoff(
+            _call,
+            max_attempts=self._provider.retry_max_attempts,
+            base_seconds=self._provider.retry_base_seconds,
+        )

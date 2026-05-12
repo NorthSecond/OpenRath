@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from rath.backend import BackendSandbox, BackendSandboxSpec, get
+from rath.llm.chat_response import RathLLMTokenUsage
 from rath.session.chunk import ChunkKind, ChunkRow, ChunkTable
 from rath.session.graph.kind import LineageKind
 from rath.session.graph.recording import LineageRecorder
@@ -127,6 +128,11 @@ class Session:
     lineage_operator: str = "implicit"
     lineage_kind: LineageKind = LineageKind.UNKNOWN
     lineage_extras: tuple[tuple[str, Any], ...] = ()
+    # Running total of LLM token usage attributed to this session. Set by
+    # run_session_loop / run_session_compress after each completion. ``None``
+    # before any completion has been folded in. Not propagated by fork() /
+    # detach() - derived sessions start at zero.
+    cumulative_usage: RathLLMTokenUsage | None = None
 
     @classmethod
     def from_agent_prompt(cls, prompt: str) -> Session:

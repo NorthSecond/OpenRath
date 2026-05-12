@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from rath.llm import Provider, RathOpenAIChatClient, RathLLMMessage, RathLLMChatResponse
+from rath.llm import (
+    Provider,
+    RathLLMChatResponse,
+    RathLLMMessage,
+    RathOpenAIChatClient,
+    add_usage,
+)
 from rath.session.chunk import ChunkTable, chunk_table_to_messages, user_text_chunk
 from rath.session.chat_request_build import provider_into_chat_request
 from rath.session.graph import LineageKind, LineageRecorder, SessionLineage
@@ -84,7 +90,8 @@ def run_session_compress(
         or user_session.sandbox_backend is not None
     ):
         sb = user_session.take_sandbox()
-    body = _completion_body(executor.complete(req))
+    resp = executor.complete(req)
+    body = _completion_body(resp)
     if body is None or not str(body).strip():
         raise RuntimeError("run_session_compress: empty model content")
 
@@ -98,6 +105,7 @@ def run_session_compress(
             producer_system_session_id=agent_session.id,
             operator="run_session_compress",
         ),
+        cumulative_usage=add_usage(None, resp.usage),
     )
     if sb is not None:
         out.bind_sandbox(sb)
