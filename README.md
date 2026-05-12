@@ -101,8 +101,9 @@ Sample OpenRath entry points:
 4. [`custom_tool_usage.py`](example/custom_tool_usage.py): FlowToolCall subclass and tool mode wiring on the model side.
 5. [`trading_agents/`](example/trading_agents/): an OpenRath reimplementation of [TradingAgents](https://github.com/TauricResearch/TradingAgents) (Tauric Research, multi-agent LLM finance stack). Roles stay in a workflow; sessions and tools follow this framework; CLI entry is `main.py`.
 6. [`engineering_agents/`](example/engineering_agents/): an OpenRath reimplementation of one scenario from [ClawTeam](https://github.com/HKUDS/ClawTeam) (HKUDS, multi-agent software-engineering automation). Nested workflows (e.g. Lead, FeatureSquad, backend pairs, QA) live in the subfolder.
+7. [`research_transformer/`](example/research_transformer/): a **Transformer-metaphor** academic pipeline (literature vs reproduction branches over N layers, optional figure tool, final polish) demonstrating story-first composition on `Session`/`Workflow`; default sandbox root is `example/research_transformer/.workspace/`.
 
-The last two are for demonstrating complex orchestration only; they are not guarantees about upstream behavior. Using upstream names still means following those repositories’ licenses and terms.
+The folders above that reimplement or storyboard upstream scenarios (`trading_agents`, `engineering_agents`, and similar) are for demonstrating complex orchestration only; they are not guarantees about upstream behavior. Using upstream names still means following those repositories’ licenses and terms.
 
 ---
 

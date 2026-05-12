@@ -101,8 +101,9 @@ uv run sphinx-build -M html docs/source docs/_build
 4. `[custom_tool_usage.py](example/custom_tool_usage.py)`：展示 FlowToolCall 子类与模型侧工具模式的衔接方式。
 5. `[trading_agents/](example/trading_agents/)`：对 [TradingAgents](https://github.com/TauricResearch/TradingAgents)（Tauric Research，多智能体 LLM 金融交易框架）的 OpenRath 重写。多角色仍以 Workflow 串联，会话与工具分发遵循本框架，命令行入口见 main.py。
 6. `[engineering_agents/](example/engineering_agents/)`：对 [ClawTeam](https://github.com/HKUDS/ClawTeam)（HKUDS，多智能体软件工程自动化）中某一示例场景的 OpenRath 重写。嵌套 Workflow（如 Lead → FeatureSquad、后端成对与 QA）在子目录内完成。
+7. `[research_transformer/](example/research_transformer/)`：以 **Transformer 隐喻** 组织的学术向多阶段流水线（文献整理与复现质疑两支、N 层展开、可选配图工具、终稿润色），默认工作区为 `example/research_transformer/.workspace/`。
 
-上述两个子目录仅用于演示复杂编排，不构成对上游项目功能、输出或行为的担保；使用上游名称时尚须遵守对应仓库的许可与条款。
+上述部分子目录仅用于演示复杂编排，不构成对上游项目功能、输出或行为的担保；使用上游名称时尚须遵守对应仓库的许可与条款。
 
 ---
 
