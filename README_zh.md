@@ -62,29 +62,66 @@ pip install .
 
 ### 配置 OpenSandbox 后端（可选）
 
-在隔离沙箱中执行会话时，于已克隆的源码树之上安装 `opensandbox` 扩展组即可：
-
 ```bash
 pip install "openrath[opensandbox]"
-# 或 pip install ".[opensandbox]"
+# 或：pip install ".[opensandbox]"
 ```
+
+安装后需能跑 OpenSandbox 服务端（通常依赖 Docker）。在项目根可直接用 `scripts/launch_opensandbox.sh` 或 `launch_opensandbox.bat`：同步可选依赖、生成 `.sandbox.toml` 并拉起 `opensandbox-server`，具体步骤见脚本内说明。
+
+客户端将 `.env.example` 抄为 `.env`，按其中 OpenSandbox 小节填写 `OPEN_SANDBOX_DOMAIN`（及如需的 API 密钥）。自检可运行 `scripts/check_opensandbox.sh` 或 `check_opensandbox.bat`（导入 SDK 与访问 `/health`）。
+
+会话内将后端设为 `opensandbox` 并传入 spec；示例见 `example/sandbox_backend_opensandbox.py`，原理见用户指南中的沙箱后端一章。
+
+---
+
+## 文档
+
+优先阅读在线文档：[https://docs.openrath.com](https://docs.openrath.com)
+
+在本地构建 Sphinx：
+
+```bash
+git clone https://github.com/Rath-Team/OpenRath.git
+uv sync --group dev --group docs
+uv run sphinx-build -M html docs/source docs/_build
+```
+
+生成的 HTML 位于 `docs/_build/html/`。
+
+---
+
+## 案例
+
+以下为一些使用 OpenRath 的 Example：
+
+1. `[session_usage.py](example/session_usage.py)`：演示会话的 fork、detach 以及绑定本地工作区后的会话循环，主入口处附带对会话压缩接口的调用。
+2. `[sandbox_backend_local.py](example/sandbox_backend_local.py)`：在本地子进程沙箱上跑通会话循环，对比无工作目录绑定与将仓库根目录绑定为工作区两种 spec。
+3. `[sandbox_backend_opensandbox.py](example/sandbox_backend_opensandbox.py)`：在 OpenSandbox 沙箱上跑通会话循环；需拉起 OpenSandbox 运行栈。
+4. `[custom_tool_usage.py](example/custom_tool_usage.py)`：展示 FlowToolCall 子类与模型侧工具模式的衔接方式。
+5. `[trading_agents/](example/trading_agents/)`：对 [TradingAgents](https://github.com/TauricResearch/TradingAgents)（Tauric Research，多智能体 LLM 金融交易框架）的 OpenRath 重写。多角色仍以 Workflow 串联，会话与工具分发遵循本框架，命令行入口见 main.py。
+6. `[engineering_agents/](example/engineering_agents/)`：对 [ClawTeam](https://github.com/HKUDS/ClawTeam)（HKUDS，多智能体软件工程自动化）中某一示例场景的 OpenRath 重写。嵌套 Workflow（如 Lead → FeatureSquad、后端成对与 QA）在子目录内完成。
+
+上述两个子目录仅用于演示复杂编排，不构成对上游项目功能、输出或行为的担保；使用上游名称时尚须遵守对应仓库的许可与条款。
 
 ---
 
 ## OpenRath 与 PyTorch 在各层设计理念上的对照
 
-| 层 | PyTorch | OpenRath | 相似之处 |
-| --- | --- | --- | --- |
-| 流动单元 | Tensor | Session | 沿计算 / 对话轴向前推进；可反复读取并追加稳定状态。 |
-| 执行结构 | 计算图 | Session Graph | 图刻画依赖；Session 承载多智能体对话与工具轨迹。 |
-| 执行后端 | GPU / CPU | Sandbox | 「算力跑在哪」对应「命令与工具跑在哪个隔离环境」。 |
-| 调用接口 | Kernel / op | Tool | 对外暴露的最小可调用单元，由后端实际执行。 |
-| 状态与超参 | `nn.Parameter` | `flow.AgentParam` | Agent 不承担「执行器」角色，更像带类型的配置 / 参数载体。 |
-| 模块化 | `nn.Module` | `flow.Workflow` | 递归组合子模块，装配复杂系统。 |
 
-1. **流动单元**
+| 层     | PyTorch        | OpenRath          | 相似之处                              |
+| ----- | -------------- | ----------------- | --------------------------------- |
+| 流动单元  | Tensor         | Session           | 沿计算 / 对话轴向前推进；可反复读取并追加稳定状态。       |
+| 执行结构  | 计算图            | Session Graph     | 图刻画依赖；Session 承载多智能体对话与工具轨迹。      |
+| 执行后端  | GPU / CPU      | Sandbox           | 算力所落之处，对应命令与工具实际运行的隔离环境。            |
+| 调用接口  | Kernel / op    | Tool              | 对外暴露的最小可调用单元，由后端实际执行。             |
+| 状态与超参 | `nn.Parameter` | `flow.AgentParam` | Agent 不承担典型执行器角色，更像带类型的配置或参数载体。       |
+| 模块化   | `nn.Module`    | `flow.Workflow`   | 递归组合子模块，装配复杂系统。                   |
 
-会话在 OpenRath 中是承载若干语义分块与时间顺序的载体，不是数值数组。类似 Tensor 在 Pytorch 中是数据流动和执行的核心，并且会话的 fork 与 detach 的命名贴近 PyTorch 习惯。
+
+1. **会话/张量**
+
+会话在 OpenRath 中是承载若干语义分块与时间顺序的载体，不是数值数组。类似 Tensor 在 PyTorch 中是数据流动和执行的核心，并且会话的 fork 与 detach 的命名贴近 PyTorch 习惯。
 
 在 OpenRath
 
@@ -108,7 +145,7 @@ b = a.clone()
 c = a.detach()
 ```
 
-2. **执行结构**
+2. **会话图/计算图**
 
 PyTorch 里一次乘法会把新张量挂到计算图上，grad_fn 指向产生该张量的反向节点；对叶子再做 detach 后 grad_fn 为空。而在 OpenRath 里，会话维护身份与分叉元数据：每个会话有稳定的 id，fork 产物记录父会话 id 列表，detach 产物则不再声明父链。
 
@@ -140,9 +177,9 @@ print("b grad_fn:", b.grad_fn)
 print("c.grad_fn:", c.grad_fn)
 ```
 
-3. **执行后端**
+3. **沙箱/设备**
 
-OpenRath 将沙箱后端抽象成 `Device` 一样的类型，沙箱与会话一对一绑定，设置 Session 的执行环境与会话所认的工作目录，分块内容不因此而自动改写。并且 OpenRath 采用类似 Pytorch 的 `to(device)` 调用：先构造对象，再声明“在哪儿执行”。
+OpenRath 将沙箱后端抽象成 `Device` 一样的类型，沙箱与会话一对一绑定，设置 Session 的执行环境与会话所认的工作目录，分块内容不因此而自动改写。并且 OpenRath 采用类似 PyTorch 的 `to(device)` 调用：先构造对象，再声明在哪里执行。
 
 在 OpenRath
 
@@ -165,11 +202,11 @@ a = torch.ones(2, 3)
 a = a.to("cuda:0")
 ```
 
-4. **调用接口**
+4. **核函数/工具**
 
-在 Pytorch 核函数或高层算子接收已放置张量，在张量所在设备上完成数值工作，返回值仍是张量。在 OpenRath，工具调用路径则接收结构化载荷，由当前沙箱解释并在隔离边界内产生命令结果或文件内容等反馈，再写回会话分块。
+在 PyTorch 中核函数或高层算子接收已放置张量，在张量所在设备上完成数值工作，返回值仍是张量。在 OpenRath 中，工具调用路径则接收结构化载荷，由当前沙箱解释并在隔离边界内产生命令结果或文件内容等反馈，再写回会话分块。
 
-OpenRath 和 Pytorch 的调用接口在表面形状上对齐：都是“准备输入 → 调用一层很薄的 API → 由运行时接手重活”。
+OpenRath 与 PyTorch 的调用接口在表面形状上对齐：准备输入、调用一层很薄的 API，再交给运行时处理重活。
 
 在 OpenRath
 
@@ -204,7 +241,7 @@ target = torch.tensor([0, 1, 2])
 loss = F.cross_entropy(logits, target)
 ```
 
-5. **状态与超参**
+5. **智能体状态/参数**
 
 模块参数在 PyTorch 中注册到模块字典，优化器按名字收集并更新张量数据。在 OpenRath 中 AgentParam 将两段信息绑成一体：一段由 from_agent_prompt 播种的智能体会话分块，决定模型在每轮补全前稳定看到的前缀；另一段 Provider 携带模型名与采样等请求级字段。
 
@@ -229,9 +266,9 @@ from torch import nn
 weight = nn.Parameter(torch.randn(1024, 4096))
 ```
 
-6. **模块化**
+6. **工作流/模块**
 
-OpenRath 将 Workflow 的实现变成一件可模块化、组件化的事情，类似 Pytorch 的 `Module`。依靠 OpenRath 的 Session 设计，开发者可以忽略 Multi Agent 协作期间的 Session 和 Context 管理，关注 Workflow 的模块化开发上。
+OpenRath 将 Workflow 的实现变成一件可模块化、组件化的事情，类似 PyTorch 的 `Module`。在 Session 与分块由框架维护的前提下，实现者主要组织 Workflow 的模块化组合与业务逻辑。
 
 在 OpenRath
 
@@ -297,28 +334,6 @@ model = Linear(4, 2)
 x = torch.randn(3, 4)
 y = model(x)
 ```
-
----
-
-## 案例
-
-仓库在 `example/` 目录下附带可运行的最小示例（含本地 / OpenSandbox 后端、自定义工具，以及更大的工程向示例的子目录）。
-
----
-
-## 文档
-
-优先阅读在线文档：https://docs.openrath.com
-
-在本地构建 Sphinx：
-
-```bash
-git clone https://github.com/Rath-Team/OpenRath.git
-uv sync --group dev --group docs
-uv run sphinx-build -M html docs/source docs/_build
-```
-
-生成的 HTML 位于 `docs/_build/html/`。
 
 ---
 
