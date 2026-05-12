@@ -366,6 +366,18 @@ def run_session_loop(
         _notify_chunk_append(chunk_print, rows_list, out)
         if choice.finish_reason in ("stop", "length", "content_filter"):
             break
+    else:
+        # Loop exhausted max_tool_rounds without a natural finish_reason.
+        # The last row may be a tool_result, which is easy to mistake for
+        # a mid-run failure. Warn and stamp lineage so callers can detect
+        # truncation programmatically.
+        logger.warning(
+            "run_session_loop hit max_tool_rounds=%d without "
+            "finish_reason in (stop, length, content_filter); "
+            "last row may be a tool_result",
+            max_tool_rounds,
+        )
+        out.lineage_extras = out.lineage_extras + (("loop.truncated", True),)
 
     out.chunk_table = ChunkTable(rows=tuple(rows_list))
     reg.set_active(out)
