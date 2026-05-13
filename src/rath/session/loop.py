@@ -30,6 +30,7 @@ from rath.llm import (
     RathLLMChatResponse,
     RathLLMFunctionTool,
     RathOpenAIChatClient,
+    add_usage,
 )
 from rath.session.chat_request_build import provider_into_chat_request
 from rath.session.provider_builtin import DefaultSessionLoopExecutor
@@ -102,6 +103,49 @@ def _notify_chunk_append(
 
 def _sync_loop_out_rows(out: Session, rows_list: list[Any]) -> None:
     out.chunk_table = ChunkTable(rows=tuple(rows_list))
+
+
+def _accumulate_usage_and_check_budget(
+    out: Session,
+    resp: RathLLMChatResponse,
+    provider: Provider,
+) -> None:
+    """Fold ``resp.usage`` into ``out.cumulative_usage`` and trip the budget guard.
+
+    The guard fires **only on the completion that first pushes the running
+    total past ``provider.budget_total_tokens``**, never again for the same
+    ``out`` session. That keeps a multi-round tool-calling loop from
+    re-invoking the callback (or re-logging the warning) every round once the
+    cap has already been crossed; callers that want to abort the loop are
+    expected to raise :class:`~rath.llm.BudgetExceededError` from the
+    callback on that first call.
+
+    The latch is implicit in the prev/new transition (``prev <= cap`` and
+    ``new > cap``); no new session state is introduced.
+    """
+    if resp.usage is None:
+        return
+    prev_total = (
+        out.cumulative_usage.total_tokens if out.cumulative_usage is not None else 0
+    )
+    out.cumulative_usage = add_usage(out.cumulative_usage, resp.usage)
+    cap = provider.budget_total_tokens
+    if cap is None or out.cumulative_usage is None:
+        return
+    new_total = out.cumulative_usage.total_tokens
+    if new_total <= cap or prev_total > cap:
+        return
+    callback = provider.on_budget_exceeded
+    if callback is None:
+        logger.warning(
+            "session %s exceeded budget_total_tokens=%d "
+            "(cumulative=%d); no callback configured",
+            out.id,
+            cap,
+            new_total,
+        )
+        return
+    callback(out, out.cumulative_usage)
 
 
 @runtime_checkable
@@ -298,6 +342,7 @@ def run_session_loop(
             default_tool_choice="auto",
         )
         resp = executor.complete(req)
+        _accumulate_usage_and_check_budget(out, resp, prefs)
         choice = resp.primary_choice
         msg = choice.message
         tcalls = msg.tool_calls

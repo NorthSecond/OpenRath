@@ -13,6 +13,7 @@ __all__ = [
     "RathLLMChatChoice",
     "RathLLMChatResponse",
     "RathLLMFinishReason",
+    "add_usage",
 ]
 
 RathLLMFinishReason = Literal[
@@ -93,3 +94,25 @@ class RathLLMChatResponse:
         if not self.choices:
             raise IndexError("RathLLMChatResponse has no choices")
         return self.choices[0]
+
+
+def add_usage(
+    a: RathLLMTokenUsage | None,
+    b: RathLLMTokenUsage | None,
+) -> RathLLMTokenUsage | None:
+    """Sum two token usages.
+
+    Returns ``None`` only when both inputs are ``None`` (so callers can detect
+    that no provider in the chain reported usage). Detail dicts are not merged
+    - they are dropped on the accumulated total because per-call breakdowns
+    don't sum cleanly.
+    """
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return RathLLMTokenUsage(
+        prompt_tokens=a.prompt_tokens + b.prompt_tokens,
+        completion_tokens=a.completion_tokens + b.completion_tokens,
+        total_tokens=a.total_tokens + b.total_tokens,
+    )

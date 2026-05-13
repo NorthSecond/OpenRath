@@ -34,6 +34,9 @@ opensandbox = [
     "opensandbox-code-interpreter>=0.1.2",
     "opensandbox-server>=0.1.12",
 ]
+mcp = [
+    "mcp>=1.0.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rath"]

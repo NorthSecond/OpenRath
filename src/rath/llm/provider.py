@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -47,6 +47,20 @@ class Provider:
     extra_create_args: Mapping[str, Any] = field(
         default_factory=lambda: MappingProxyType({})
     )
+    # Retry policy for transient OpenAI-compatible errors. ``None`` means use
+    # the built-in defaults in :mod:`rath.llm._retry`.
+    retry_max_attempts: int | None = None
+    retry_base_seconds: float | None = None
+    # Token budget guardrail. When non-None, the **first** completion in a
+    # ``run_session_loop`` that pushes ``Session.cumulative_usage`` past the
+    # cap invokes ``on_budget_exceeded`` (or emits a single
+    # ``logger.warning`` if no callback is set). The guard is latched per
+    # session: subsequent completions in the same loop do not re-fire it
+    # even if the running total stays above the cap. Callers that want to
+    # abort the loop are expected to raise
+    # :class:`BudgetExceededError` from the callback on that first call.
+    budget_total_tokens: int | None = None
+    on_budget_exceeded: Callable[..., None] | None = None
 
     def __str__(self) -> str:
         return self.model if self.model is not None else "(no model)"
