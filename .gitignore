@@ -11,7 +11,7 @@ htmlcov/
 .coverage
 .coverage.*
 
-# Local env (API keys); use .env.example as the template.
+# Local secret files; OpenRath does not load repository-local secret files.
 .env
 .workspace/
 
@@ -22,3 +22,6 @@ htmlcov/
 docs/_build/
 site/
 site.zip
+
+# Local planning artifacts
+proposal/

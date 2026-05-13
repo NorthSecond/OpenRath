@@ -276,7 +276,7 @@ from rath.session import Session
 
 agent = flow.AgentParam(
     agent_session=Session.from_agent_prompt("You are a helpful assistant."),
-    provider=flow.Provider(model="glm-5.1"),
+    provider=flow.Provider(api_key="sk-...", model="glm-5.1"),
 )
 ```
 
@@ -326,7 +326,7 @@ class Agent(flow.Workflow):
 
 agent_model = Agent(
     system_prompt="You are a helpful assistant.",
-    provider=flow.Provider(model="glm-5.1"),
+    provider=flow.Provider(api_key="sk-...", model="glm-5.1"),
 )
 
 user_session = Session.from_user_message(
