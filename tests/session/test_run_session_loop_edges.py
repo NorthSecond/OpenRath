@@ -338,7 +338,14 @@ def test_dispatch_exception_surfaces_in_tool_chunk() -> None:
     assert "RuntimeError" in payload.get("message", "")
 
 
-def test_default_executor_requires_provider_api_key() -> None:
+def test_default_executor_requires_api_key_somewhere(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no Provider.api_key and no env fallback, the default executor must
+    raise from the client (not from a redundant pre-check in the loop)."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("AZURE_API_KEY", raising=False)
     backend = get("local")
     agent = AgentParam(
         Session.from_agent_prompt("sys"),
@@ -346,7 +353,7 @@ def test_default_executor_requires_provider_api_key() -> None:
     )
     with backend.open() as sb:
         user = Session.from_user_message("x").with_sandbox(sb)
-        with pytest.raises(ValueError, match="agent_provider.api_key"):
+        with pytest.raises(ValueError, match="No API key found"):
             run_session_loop(
                 user,
                 agent.agent_session,
