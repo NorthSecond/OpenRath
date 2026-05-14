@@ -103,6 +103,7 @@ class RathOpenAIChatClient:
                 "(e.g. via a project .env file).",
             )
         self._provider = provider
+        self._client: OpenAI | AzureOpenAI
 
         use_azure_legacy = _is_azure_endpoint(base_url) and "/openai/v1" not in base_url
         if use_azure_legacy:

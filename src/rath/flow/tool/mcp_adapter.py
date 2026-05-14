@@ -38,8 +38,8 @@ try:
         ClientSession,
         StdioServerParameters,
     )
-    from mcp.client.stdio import (
-        stdio_client,  # type: ignore[import-not-found, unused-ignore]
+    from mcp.client.stdio import (  # type: ignore[import-not-found, unused-ignore]
+        stdio_client,
     )
 
     _MCP_AVAILABLE = True
